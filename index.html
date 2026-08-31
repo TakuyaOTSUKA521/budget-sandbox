@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kakeibo</title>
+<style>
+  body {
+    font-family: 'Inter', -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 16px;
+    background: #f7f7f5;
+    color: #222;
+  }
+  h1 { font-size: 20px; }
+  input, select, button {
+    width: 100%;
+    padding: 10px;
+    margin: 6px 0;
+    font-size: 16px;
+    box-sizing: border-box;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+  }
+  button { background: #222; color: white; border: none; cursor: pointer; }
+  #app-view { display: none; }
+  .tx-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #e0e0e0;
+    font-size: 14px;
+  }
+  .tx-amount.negative { color: #c0392b; }
+  .tx-amount.positive { color: #27ae60; }
+</style>
+</head>
+<body>
+
+<div id="login-view">
+  <h1>ログイン</h1>
+  <input id="email" type="email" placeholder="email">
+  <input id="password" type="password" placeholder="password">
+  <button id="login-btn">ログイン</button>
+  <p id="login-error" style="color:red"></p>
+</div>
+
+<div id="app-view">
+  <h1>家計簿</h1>
+  <button id="logout-btn">ログアウト</button>
+
+  <h2>追加</h2>
+  <select id="account-select"></select>
+  <select id="category-select"></select>
+  <input id="amount" type="number" placeholder="金額(支出はマイナス)">
+  <input id="memo" type="text" placeholder="メモ">
+  <button id="add-btn">登録</button>
+
+  <h2>一覧</h2>
+  <div id="tx-list"></div>
+</div>
+
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const supabase = createClient(
+  'https://sicucuywqqcapbogfkoy.supabase.co',
+  'sb_publishable_oInvR1n1J0y_ereuoDT6pw_odcKt4ya'
+);
+
+const loginView = document.getElementById('login-view');
+const appView = document.getElementById('app-view');
+
+async function loadAccountsAndCategories() {
+  const { data: accounts } = await supabase.from('accounts').select('id, name');
+  const { data: categories } = await supabase.from('categories').select('id, name');
+
+  document.getElementById('account-select').innerHTML =
+    accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+  document.getElementById('category-select').innerHTML =
+    categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+}
+
+async function loadTransactions() {
+  const { data, error } = await supabase
+    .from('transaction')
+    .select('id, amount, memo, transaction_date, categories(name), accounts(name)')
+    .order('transaction_date', { ascending: false });
+
+  const list = document.getElementById('tx-list');
+  if (error) { list.textContent = 'エラー: ' + error.message; return; }
+
+  list.innerHTML = data.map(t => `
+    <div class="tx-row">
+      <span>${t.transaction_date} ${t.categories.name} (${t.accounts.name})</span>
+      <span class="tx-amount ${t.amount < 0 ? 'negative' : 'positive'}">${t.amount}</span>
+    </div>
+  `).join('');
+}
+
+async function showApp() {
+  loginView.style.display = 'none';
+  appView.style.display = 'block';
+  await loadAccountsAndCategories();
+  await loadTransactions();
+}
+
+document.getElementById('login-btn').addEventListener('click', async () => {
+  const email = document.getElementById('email').value;
+  const password = document.getElementById('password').value;
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) document.getElementById('login-error').textContent = error.message;
+  else await showApp();
+});
+
+document.getElementById('logout-btn').addEventListener('click', async () => {
+  await supabase.auth.signOut();
+  appView.style.display = 'none';
+  loginView.style.display = 'block';
+});
+
+document.getElementById('add-btn').addEventListener('click', async () => {
+  const { data: { user } } = await supabase.auth.getUser();
+  const accounts_id = Number(document.getElementById('account-select').value);
+  const category_id = Number(document.getElementById('category-select').value);
+  const amount = Number(document.getElementById('amount').value);
+  const memo = document.getElementById('memo').value;
+
+  const { error } = await supabase.from('transaction').insert({ accounts_id, category_id, amount, memo, user_id: user.id });
+  if (error) { alert('エラー: ' + error.message); return; }
+  document.getElementById('amount').value = '';
+  document.getElementById('memo').value = '';
+  await loadTransactions();
+});
+
+const { data: { session } } = await supabase.auth.getSession();
+if (session) await showApp();
+</script>
+</body>
+</html>
