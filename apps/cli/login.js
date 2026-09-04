@@ -1,11 +1,11 @@
 import 'dotenv/config';
-import { createClient } from '@supabase/supabase-js';
+import { createSupabaseClient } from '../../packages/core/client.js';
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+const supabase = createSupabaseClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 
 const [email, password] = process.argv.slice(2);
 
-const {data, error} = await supabase.auth.signInWithPassword({email, password});
+const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
 if (error) {
     console.error("ERROR", error.message);

@@ -1,0 +1,1313 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Budget Sandbox</title>
+<script type="importmap">
+{
+  "imports": {
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f4f4f1;
+    --card: #ffffff;
+    --card-border: #e4e4de;
+    --text: #18181b;
+    --muted: #86867d;
+    --faint: #a0a098;
+    --label: #57574f;
+    --input-bg: #fcfcfa;
+    --input-border: #dcdcd5;
+    --accent: #0f6b5c;
+    --accent-hover: #0a4f44;
+    --negative: #b03a2e;
+    --secondary: #2f6f9e;
+    --row-border: #f0f0ea;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); font-family: "Noto Sans JP", sans-serif; color: var(--text); -webkit-font-smoothing: antialiased; }
+  .mono { font-family: "IBM Plex Mono", monospace; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { color: var(--accent-hover); text-decoration: underline; }
+  input, select, button, textarea { font-family: inherit; }
+
+  .app-shell { min-height: 100vh; display: flex; flex-direction: column; }
+  header { background: var(--card); border-bottom: 1px solid var(--card-border); position: sticky; top: 0; z-index: 5; }
+  .header-inner { max-width: 1080px; margin: 0 auto; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .logo-btn { display: flex; align-items: baseline; gap: 10px; background: transparent; border: none; padding: 0; cursor: pointer; text-align: left; }
+  .logo-text { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
+  .logo-sub { font-size: 12px; color: var(--muted); }
+  .header-right { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+
+  main { flex: 1; max-width: 1080px; width: 100%; margin: 0 auto; padding: 24px 20px 64px; }
+
+  h1 { margin: 0; font-size: 16px; font-weight: 700; }
+  h2 { margin: 0; font-size: 13px; font-weight: 700; }
+  h3 { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; color: var(--label); }
+
+  .card { background: var(--card); border: 1px solid var(--card-border); border-radius: 12px; padding: 18px 20px; }
+  .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .card-note { margin: 4px 0 6px; font-size: 11.5px; color: var(--faint); }
+
+  .grid-fit { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .grid-fit-320 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; align-items: start; }
+  .grid-fit-300 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; align-items: start; }
+  .stack { display: flex; flex-direction: column; gap: 20px; }
+
+  .field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--label); }
+  .field input, .field select {
+    padding: 10px 12px; font-size: 14px; border: 1px solid var(--input-border); border-radius: 8px; background: var(--input-bg); color: var(--text); width: 100%;
+  }
+  .field input:focus, .field select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+  .btn { padding: 10px 14px; font-size: 13px; background: #fff; color: #4b4b45; border: 1px solid var(--input-border); border-radius: 8px; cursor: pointer; }
+  .btn-primary { padding: 12px; font-size: 14px; font-weight: 500; background: var(--text); color: #fff; border: none; border-radius: 8px; cursor: pointer; }
+  .btn-danger-outline { background: #fff; color: var(--negative); border: 1px solid #e3c9c4; border-radius: 8px; cursor: pointer; padding: 9px 14px; font-size: 13px; }
+  .btn-sm { padding: 4px 8px; font-size: 11.5px; background: #fff; border: 1px solid var(--input-border); border-radius: 6px; color: #4b4b45; cursor: pointer; }
+  .btn-sm.danger { color: var(--negative); }
+
+  .breadcrumb { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); margin-bottom: 12px; }
+
+  .chip { padding: 6px 11px; font-size: 12.5px; border-radius: 999px; cursor: pointer; border: 1px solid var(--input-border); background: #fff; color: #4b4b45; }
+  .chip.selected { background: var(--text); color: #fff; border-color: var(--text); }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  .search-results { border: 1px solid var(--row-border); border-radius: 8px; overflow: hidden; max-height: 180px; overflow-y: auto; }
+  .search-results div { padding: 9px 12px; font-size: 13px; color: #4b4b45; border-bottom: 1px solid #f2f2ec; cursor: pointer; }
+  .search-results div:last-child { border-bottom: none; }
+  .search-results div:hover { background: #f7f7f2; }
+
+  .row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--row-border); font-size: 13.5px; }
+  .row:last-child { border-bottom: none; }
+  .row-date { font-size: 12px; color: var(--muted); flex: 0 0 auto; }
+  .row-main { flex: 1; min-width: 0; }
+  .row-memo { font-size: 11.5px; color: var(--faint); }
+  .row-actions { display: flex; gap: 4px; flex: 0 0 auto; }
+
+  .stat-label { font-size: 11.5px; color: var(--muted); letter-spacing: 0.04em; }
+  .stat-value { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; margin-top: 6px; }
+  .stat-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .neg { color: var(--negative); }
+  .pos { color: var(--accent); }
+  .clickable { cursor: pointer; }
+  .indent-name { color: var(--muted); }
+
+  .view-toggle { display: flex; gap: 6px; }
+  .node-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-top: 2px; }
+  .node-card {
+    background: var(--input-bg); border: 1px solid var(--card-border); border-left: 4px solid var(--card-border); border-radius: 10px;
+    padding: 12px 14px; cursor: pointer; display: flex; flex-direction: column; gap: 4px;
+    transition: transform .05s ease;
+  }
+  .node-card:hover { background: #f7f7f2; }
+  .node-card:active { transform: scale(0.98); }
+  .node-card .badge { font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; }
+  .node-card .path { font-size: 10.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .node-card .name { font-size: 13px; font-weight: 500; }
+  .node-card .balance { font-size: 16px; font-weight: 700; }
+  .node-card .mini-bar-track { height: 4px; background: #eeeee6; border-radius: 2px; overflow: hidden; margin-top: 2px; }
+  .node-card .mini-bar-fill { display: block; height: 4px; }
+  .node-card .sparkline { display: block; margin: 2px 0; }
+
+  .bar-chart-axis { display: flex; align-items: stretch; gap: 2px; height: 80px; padding: 0 2px; overflow-x: auto; background: #fff; border: 1px solid #eee; border-radius: 8px; }
+  .y-axis-labels { display: flex; flex-direction: column; justify-content: space-between; height: 80px; font-size: 10px; color: var(--faint); text-align: right; flex: 0 0 auto; width: 56px; }
+  .bar-col { display: flex; flex-direction: column; flex: 0 0 auto; width: 6px; }
+  .bar-col .bar-top { height: 40px; display: flex; align-items: flex-end; border-bottom: 1px solid #ddd; }
+  .bar-col .bar-bottom { height: 40px; display: flex; align-items: flex-start; }
+  .bar-col .bar { width: 100%; border-radius: 1px; }
+  .bar-col .bar.pos-bar { background: var(--accent); }
+  .bar-col .bar.neg-bar { background: var(--secondary); }
+
+  .trend-bars { display: flex; align-items: flex-end; gap: 3px; height: 132px; margin-top: 16px; padding-top: 4px; border-bottom: 1px solid #e9e9e3; }
+  .trend-bars > div { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; min-width: 3px; }
+  .trend-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--faint); margin-top: 6px; }
+
+  .progress-track { flex: 1; height: 6px; background: #f0f0ea; border-radius: 3px; overflow: hidden; }
+  .progress-fill { display: block; height: 6px; background: var(--text); }
+
+  .chart-toggle { display: flex; gap: 6px; margin: 8px 0 2px; }
+  .legend { display: flex; gap: 14px; margin-top: 10px; font-size: 11.5px; color: var(--muted); }
+  .legend span.swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+
+  .tx-table-head { display: grid; grid-template-columns: 92px 1fr 1fr 1fr 110px 96px; gap: 12px; padding: 0 0 8px; font-size: 11px; color: var(--faint); letter-spacing: 0.04em; border-bottom: 1px solid var(--card-border); }
+  .tx-table-row { display: grid; grid-template-columns: 92px 1fr 1fr 1fr 110px 96px; gap: 12px; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--row-border); font-size: 13.5px; }
+
+  .confirm-box { margin-top: 22px; border: 1px solid #e8e4d8; background: #fbf9f1; border-radius: 10px; padding: 14px 16px; }
+
+  @media (max-width: 640px) {
+    .tx-table-head, .tx-table-row { grid-template-columns: 72px 1fr 1fr; }
+    .tx-table-head span:nth-child(3), .tx-table-head span:nth-child(6),
+    .tx-table-row span:nth-child(3), .tx-table-row span:nth-child(6) { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="module">
+import { createSupabaseClient } from '../../packages/core/client.js';
+import {
+  getLeafNodes, getNodeSuggestions, searchNodes, createNode, promoteToParent,
+  listNodesWithPaths, listNodes, getDescendantIds
+} from '../../packages/core/nodes.js';
+import { recordLine, reviseLine, deleteLine } from '../../packages/core/lines.js';
+import {
+  listLines, getNetWorth, getRollupBalances, getCumulative, getLinesForNodes,
+  getNetWorthDaily, getMonthlyFlow
+} from '../../packages/core/reports.js';
+import { importMemoKey } from '../../packages/core/crypto.js';
+
+const supabase = createSupabaseClient(
+  'https://sicucuywqqcapbogfkoy.supabase.co',
+  'sb_publishable_oInvR1n1J0y_ereuoDT6pw_odcKt4ya'
+);
+
+// Same key as .env's MEMO_ENCRYPTION_KEY. Not a secret from anyone reading
+// this page's source (no server to hide it behind) - it only keeps memo out
+// of the Supabase dashboard, which connects with a role that bypasses RLS.
+const memoKey = await importMemoKey('obUs/GKDLfSYucBlOHMOfVin3+iyEDk57/BS/T6Aoqs=');
+
+const root = document.getElementById('root');
+
+let session = null;
+let state = { page: 'login', detailNodeId: null };
+let chartMode = localStorage.getItem('kakeibo:chartMode') || 'cumulative';
+let nodeViewMode = localStorage.getItem('kakeibo:nodeViewMode') || 'list';
+let selectedToNode = null;
+let editingLineId = null;
+let nodesById = new Map();
+let linesById = new Map();
+let chartData = [];
+let txListRows = [];
+let txListOffset = 0;
+let txListDone = false;
+const TX_PAGE_SIZE = 20;
+
+function esc(str) {
+  return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function yen(n) {
+  const v = Number(n ?? 0);
+  return (v < 0 ? '−' : '') + Math.abs(v).toLocaleString('ja-JP');
+}
+
+function todayISODate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function monthStart(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+function go(page, extra = {}) {
+  // Fully replace state (not merge) so leftover transient state from a
+  // previous visit - an in-progress edit, a pending hierarchy confirmation,
+  // a search query - doesn't leak into an unrelated later visit to the page.
+  state = { page, ...extra };
+  render();
+  window.scrollTo(0, 0);
+}
+
+const NODE_TYPE_META = {
+  asset: { label: '資産', color: 'var(--accent)' },
+  liability: { label: '負債', color: 'var(--negative)' },
+  flow: { label: '収支', color: 'var(--secondary)' }
+};
+
+// ============================================================
+// Shared node-hierarchy helpers (mirrors nodes.js#getLeafNodes but keeps
+// path/depth info the UI needs; still just filtering already-fetched rows).
+// ============================================================
+
+async function loadAllNodesWithPaths() {
+  const nodes = await listNodesWithPaths(supabase);
+  nodesById = new Map(nodes.map((n) => [n.id, n]));
+  return nodes;
+}
+
+function computeSpendingDestinations(nodes, balanceByNodeId) {
+  const parentIds = new Set(nodes.map((n) => n.parent_id).filter(Boolean));
+  return nodes
+    .filter((n) => n.node_type === 'flow' && !parentIds.has(n.id))
+    .filter((n) => Number(balanceByNodeId.get(n.id) ?? 0) > 0)
+    .sort((a, b) => Number(balanceByNodeId.get(b.id)) - Number(balanceByNodeId.get(a.id)));
+}
+
+// ============================================================
+// Shared transaction-row rendering (used by 記録/取引一覧/ノード詳細)
+// ============================================================
+
+function renderTxRow(l) {
+  linesById.set(l.id, l);
+  return `
+    <div class="row">
+      <span class="row-date mono">${l.occurred_on}</span>
+      <div class="row-main">
+        <div>${esc(l.from_name)} → ${esc(l.to_name)}</div>
+        ${l.memo ? `<div class="row-memo">${esc(l.memo)}</div>` : ''}
+      </div>
+      <span class="mono neg">${yen(l.amount)}</span>
+      <span class="row-actions">
+        <button type="button" class="btn-sm tx-edit" data-id="${l.id}">編集</button>
+        <button type="button" class="btn-sm danger tx-delete" data-id="${l.id}">削除</button>
+      </span>
+    </div>
+  `;
+}
+
+function attachTxRowActions(container) {
+  container.querySelectorAll('.tx-edit').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const line = linesById.get(btn.dataset.id);
+      go('record', { editLine: line });
+    });
+  });
+  container.querySelectorAll('.tx-delete').forEach((btn) => {
+    btn.addEventListener('click', () => handleDeleteLine(btn.dataset.id));
+  });
+}
+
+// The tx-list page caches fetched rows client-side for pagination/search;
+// any write must invalidate it so a stale (deleted/edited) row doesn't
+// linger there until an unrelated reload.
+function invalidateTxCache() {
+  txListRows = [];
+  txListOffset = 0;
+  txListDone = false;
+}
+
+async function handleDeleteLine(lineId) {
+  if (!confirm('この取引を削除しますか？')) return;
+  await deleteLine(supabase, lineId);
+  if (editingLineId === lineId) editingLineId = null;
+  invalidateTxCache();
+  await render();
+}
+
+// ============================================================
+// Bar chart (zero-axis, positive above in green, negative below in blue)
+// ============================================================
+
+// Computed once from both series (cumulative_balance and daily_delta) so the
+// y-axis scale - and therefore its labels - stays fixed when the user toggles
+// chart mode, instead of rescaling and jumping around each time.
+function computeChartMaxAbs(points) {
+  return Math.max(
+    ...points.map((p) => Math.abs(Number(p.cumulative_balance))),
+    ...points.map((p) => Math.abs(Number(p.daily_delta))),
+    1
+  );
+}
+
+function renderBarChartAxis(points, valueKey, maxAbs) {
+  if (points.length === 0) return '<p style="font-size:13px;color:var(--faint);">データなし</p>';
+
+  const half = 40;
+  const bars = points.map((p) => {
+    const value = Number(p[valueKey]);
+    const posHeight = value > 0 ? Math.max(2, Math.round((value / maxAbs) * half)) : 0;
+    const negHeight = value < 0 ? Math.max(2, Math.round((Math.abs(value) / maxAbs) * half)) : 0;
+    return `
+      <div class="bar-col" title="${p.occurred_on}: ${value}">
+        <div class="bar-top"><div class="bar pos-bar" style="height:${posHeight}px"></div></div>
+        <div class="bar-bottom"><div class="bar neg-bar" style="height:${negHeight}px"></div></div>
+      </div>
+    `;
+  }).join('');
+
+  const mid = points[Math.floor(points.length / 2)];
+
+  return `
+    <div style="display:flex;gap:8px;align-items:stretch;">
+      <div class="y-axis-labels mono">
+        <span>${yen(maxAbs)}</span>
+        <span>0</span>
+        <span>${yen(-maxAbs)}</span>
+      </div>
+      <div class="bar-chart-axis" style="flex:1;">${bars}</div>
+    </div>
+    <div class="trend-axis" style="margin-left:60px;">
+      <span>${points[0].occurred_on}</span>
+      <span>${mid.occurred_on}</span>
+      <span>${points[points.length - 1].occurred_on}</span>
+    </div>
+  `;
+}
+
+// ============================================================
+// Header + page shell
+// ============================================================
+
+function renderHeader() {
+  return `
+    <header>
+      <div class="header-inner">
+        <button class="logo-btn" data-nav="dashboard">
+          <span class="logo-text">Budget Sandbox</span>
+          <span class="logo-sub">家計簿</span>
+        </button>
+        <div class="header-right">
+          <span>${esc(session?.user?.email ?? '')}</span>
+          <button class="btn" data-nav="settings">設定</button>
+          <button class="btn" id="logout-btn">ログアウト</button>
+        </div>
+      </div>
+    </header>
+  `;
+}
+
+function wireHeader() {
+  root.querySelectorAll('[data-nav]').forEach((el) => {
+    el.addEventListener('click', () => go(el.dataset.nav));
+  });
+  const logoutBtn = document.getElementById('logout-btn');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', async () => {
+      await supabase.auth.signOut();
+      session = null;
+      go('login');
+    });
+  }
+}
+
+// ============================================================
+// ログイン
+// ============================================================
+
+function renderLoginPage() {
+  return `
+    <div style="max-width:380px;margin:6vh auto 0;" class="card">
+      <h1 style="font-size:20px;">ログイン</h1>
+      <p style="margin:4px 0 22px;font-size:13px;color:var(--muted);line-height:1.6;">Budget Sandbox のアカウントでサインインします。</p>
+      <div class="stack" style="gap:14px;">
+        <label class="field">メールアドレス<input id="email" type="email"></label>
+        <label class="field">パスワード<input id="password" type="password"></label>
+        <button id="login-btn" class="btn-primary">ログイン</button>
+        <p id="login-error" style="color:var(--negative);font-size:12px;margin:0;"></p>
+      </div>
+    </div>
+  `;
+}
+
+function wireLogin() {
+  document.getElementById('login-btn').addEventListener('click', async () => {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      document.getElementById('login-error').textContent = error.message;
+      return;
+    }
+    session = data.session;
+    go('record');
+  });
+}
+
+// ============================================================
+// ダッシュボード
+// ============================================================
+
+async function renderDashboardPage() {
+  const nodes = await loadAllNodesWithPaths();
+  const balances = await getRollupBalances(supabase);
+  const balanceByNodeId = new Map(balances.map((b) => [b.node_id, b.balance]));
+
+  const [netWorth, dailyNetWorth, monthlyFlow, recentLines] = await Promise.all([
+    getNetWorth(supabase),
+    getNetWorthDaily(supabase),
+    getMonthlyFlow(supabase, monthStart()),
+    listLines(supabase, { ascending: false, limit: 5 }, memoKey)
+  ]);
+
+  const trendPoints = dailyNetWorth.slice(-30);
+  const trendMin = Math.min(0, ...trendPoints.map((p) => Number(p.net_worth)));
+  const trendMax = Math.max(1, ...trendPoints.map((p) => Number(p.net_worth)));
+  const trendBars = trendPoints
+    .map((p) => {
+      const pct = Math.max(4, Math.round(((Number(p.net_worth) - trendMin) / (trendMax - trendMin || 1)) * 100));
+      return `<div style="height:${pct}%" title="${p.occurred_on}: ${yen(p.net_worth)}"></div>`;
+    })
+    .join('');
+
+  const spendingDestinations = computeSpendingDestinations(nodes, balanceByNodeId).slice(0, 5);
+  const maxSpend = Math.max(...spendingDestinations.map((n) => Number(balanceByNodeId.get(n.id))), 1);
+  const topSpendRows = spendingDestinations
+    .map((n) => {
+      const amount = Number(balanceByNodeId.get(n.id));
+      const pct = Math.max(4, Math.round((amount / maxSpend) * 100));
+      return `
+        <div class="row">
+          <span style="flex:0 0 auto;min-width:118px;">${esc(n.name)}</span>
+          <span class="progress-track"><span class="progress-fill" style="width:${pct}%"></span></span>
+          <span class="mono" style="min-width:74px;text-align:right;">${yen(amount)}</span>
+        </div>
+      `;
+    })
+    .join('') || '<p style="font-size:13px;color:var(--faint);">まだ記録がありません</p>';
+
+  const recentRows = recentLines.map((l) => renderTxRow(l)).join('') || '<p style="font-size:13px;color:var(--faint);">まだ記録がありません</p>';
+
+  const today = new Date();
+  const monthLabel = `${today.getFullYear()}年${today.getMonth() + 1}月`;
+  const rangeLabel = `${today.getMonth() + 1}月1日 – ${today.getMonth() + 1}月${today.getDate()}日の集計`;
+
+  return `
+    <div class="stack">
+      <div class="card-head">
+        <div>
+          <h1>${monthLabel}</h1>
+          <p style="margin:2px 0 0;font-size:12.5px;color:var(--muted);">${rangeLabel}</p>
+        </div>
+        <button class="btn-primary" style="width:auto;" data-nav="record">記録する</button>
+      </div>
+
+      <div class="grid-fit">
+        <div class="card">
+          <div class="stat-label">純資産</div>
+          <div class="stat-value mono">${yen(netWorth.net_worth)}</div>
+        </div>
+        <div class="card">
+          <div class="stat-label">今月の支出</div>
+          <div class="stat-value mono neg">${yen(monthlyFlow.spend)}</div>
+        </div>
+        <div class="card">
+          <div class="stat-label">今月の収入</div>
+          <div class="stat-value mono pos">${yen(monthlyFlow.income)}</div>
+        </div>
+      </div>
+
+      <div class="grid-fit-320">
+        <section class="card">
+          <div class="card-head">
+            <h2>純資産の推移</h2>
+            <span style="font-size:11.5px;color:var(--faint);">直近 ${trendPoints.length} 日</span>
+          </div>
+          <div class="trend-bars">${trendBars || ''}</div>
+          ${trendPoints.length ? `
+            <div class="trend-axis">
+              <span>${trendPoints[0].occurred_on}</span>
+              <span>${trendPoints[Math.floor(trendPoints.length / 2)].occurred_on}</span>
+              <span>${trendPoints[trendPoints.length - 1].occurred_on}</span>
+            </div>
+          ` : ''}
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>消費相手 上位</h2>
+            <button class="btn" style="width:auto;padding:5px 11px;font-size:11.5px;" data-nav="nodes">ノード一覧</button>
+          </div>
+          <div style="margin-top:10px;">${topSpendRows}</div>
+        </section>
+      </div>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>最近の記録</h2>
+          <a href="#" data-nav="tx">すべて見る</a>
+        </div>
+        <div style="margin-top:8px;">${recentRows}</div>
+      </section>
+    </div>
+  `;
+}
+
+function wireDashboard() {
+  attachTxRowActions(root);
+}
+
+// ============================================================
+// 記録
+// ============================================================
+
+async function renderRecordPage() {
+  const editLine = state.editLine ?? null;
+  if (editLine) {
+    editingLineId = editLine.id;
+    selectedToNode = { id: editLine.to_node, path: editLine.to_name };
+  }
+
+  const [assetsAndLiabilities, suggestions, todayLines] = await Promise.all([
+    getLeafNodes(supabase),
+    getNodeSuggestions(supabase, 8),
+    listLines(supabase, { ascending: false, limit: 50 }, memoKey)
+  ]);
+
+  const typeOrder = { asset: 0, liability: 1, flow: 2 };
+  assetsAndLiabilities.sort((a, b) => typeOrder[a.node_type] - typeOrder[b.node_type] || a.name.localeCompare(b.name));
+
+  const fromValue = editLine?.from_node ?? assetsAndLiabilities[0]?.id ?? '';
+  const fromOptions = assetsAndLiabilities
+    .map((n) => `<option value="${n.id}" ${n.id === fromValue ? 'selected' : ''}>${esc(n.name)}</option>`)
+    .join('');
+
+  const chipRow = suggestions
+    .map((s) => {
+      const selected = selectedToNode?.id === s.node_id;
+      return `<button type="button" class="chip${selected ? ' selected' : ''}" data-id="${s.node_id}" data-path="${esc(s.path ?? '')}">${esc((s.path ?? s.node_id).split(' > ').pop())}</button>`;
+    })
+    .join('');
+
+  const todayISO = todayISODate();
+  const todayRows = todayLines.filter((l) => l.occurred_on === todayISO).map((l) => renderTxRow(l)).join('')
+    || '<p style="font-size:12px;color:var(--faint);">今日はまだありません</p>';
+
+  return `
+    <div class="breadcrumb"><a href="#" data-nav="dashboard">ダッシュボード</a><span>/</span><span>記録</span></div>
+    <div class="grid-fit-320">
+      <section class="card">
+        <h1>記録</h1>
+        <p style="margin:2px 0 20px;font-size:12.5px;color:var(--muted);">お金の出どころと行き先を選んで金額を入れます。</p>
+        <div class="stack" style="gap:18px;">
+          <label class="field">出どころ
+            <select id="from-select">${fromOptions}</select>
+          </label>
+
+          <div class="field" style="gap:8px;">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;">
+              <span>行き先</span>
+              <span id="selected-to" style="color:var(--accent);font-size:12px;">${selectedToNode ? esc(selectedToNode.path ?? selectedToNode.id) : '未選択'}</span>
+            </div>
+            <div class="chip-row" id="suggestions">${chipRow}</div>
+            <input id="to-search" type="text" placeholder="行き先を検索（食費、マクドナルド...）">
+            <div class="search-results" id="search-results"></div>
+          </div>
+
+          <div class="grid-fit" style="grid-template-columns:1fr 1fr;">
+            <label class="field">金額<input id="amount" type="number" placeholder="0" value="${editLine?.amount ?? ''}" style="font-size:18px;" class="mono"></label>
+            <label class="field">日付<input id="occurred-on" type="date" value="${editLine?.occurred_on ?? todayISO}"></label>
+          </div>
+
+          <label class="field">メモ<input id="memo" type="text" placeholder="任意" value="${esc(editLine?.memo ?? '')}"></label>
+
+          <div style="display:flex;gap:8px;">
+            <button id="add-btn" class="btn-primary" style="flex:1;">${editingLineId ? '更新' : '登録'}</button>
+            <button id="cancel-edit-btn" type="button" class="btn" style="${editingLineId ? '' : 'display:none;'}">キャンセル</button>
+          </div>
+          <p id="add-error" style="color:var(--negative);font-size:12px;margin:0;"></p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>今日の記録</h2>
+        <p style="margin:2px 0 8px;font-size:12px;color:var(--muted);">登録するとここに追加されます。</p>
+        <div id="today-tx">${todayRows}</div>
+        <p style="margin:12px 0 0;font-size:12px;color:var(--faint);line-height:1.7;">よく使う行き先は上のチップに自動で並びます。新しい店や科目は<a href="#" data-nav="manage">ノード管理</a>から作成できます。</p>
+      </section>
+    </div>
+  `;
+}
+
+function selectToNodeInline(node) {
+  selectedToNode = node;
+  document.getElementById('selected-to').textContent = node.path ?? node.name ?? node.id;
+  root.querySelectorAll('#suggestions .chip').forEach((btn) => {
+    btn.classList.toggle('selected', btn.dataset.id === node.id);
+  });
+  document.getElementById('search-results').innerHTML = '';
+  document.getElementById('to-search').value = '';
+}
+
+function wireRecord() {
+  attachTxRowActions(document.getElementById('today-tx'));
+
+  root.querySelectorAll('#suggestions .chip').forEach((btn) => {
+    btn.addEventListener('click', () => selectToNodeInline({ id: btn.dataset.id, path: btn.dataset.path }));
+  });
+
+  document.getElementById('to-search').addEventListener('input', async (e) => {
+    const query = e.target.value.trim();
+    const resultsEl = document.getElementById('search-results');
+    if (!query) {
+      resultsEl.innerHTML = '';
+      return;
+    }
+    const results = await searchNodes(supabase, query);
+    resultsEl.innerHTML = results.map((n) => `<div data-id="${n.id}" data-path="${esc(n.path)}">${esc(n.path)}</div>`).join('');
+    resultsEl.querySelectorAll('div').forEach((el) => {
+      el.addEventListener('click', () => selectToNodeInline({ id: el.dataset.id, path: el.dataset.path }));
+    });
+  });
+
+  document.getElementById('cancel-edit-btn').addEventListener('click', () => {
+    editingLineId = null;
+    selectedToNode = null;
+    state.editLine = null;
+    render();
+  });
+
+  document.getElementById('add-btn').addEventListener('click', async () => {
+    const errorEl = document.getElementById('add-error');
+    errorEl.textContent = '';
+
+    if (!selectedToNode) {
+      errorEl.textContent = '行き先を選択してください';
+      return;
+    }
+
+    const fromNode = document.getElementById('from-select').value;
+    const amount = Number(document.getElementById('amount').value);
+    const memo = document.getElementById('memo').value;
+    const occurredOn = document.getElementById('occurred-on').value;
+
+    try {
+      if (editingLineId) {
+        await reviseLine(supabase, editingLineId, { occurredOn, fromNode, toNode: selectedToNode.id, amount, memo }, memoKey);
+      } else {
+        const { data: { user } } = await supabase.auth.getUser();
+        await recordLine(supabase, { userId: user.id, occurredOn, fromNode, toNode: selectedToNode.id, amount, memo }, memoKey);
+      }
+    } catch (error) {
+      errorEl.textContent = error.message;
+      return;
+    }
+
+    editingLineId = null;
+    selectedToNode = null;
+    state.editLine = null;
+    invalidateTxCache();
+    render();
+  });
+}
+
+// ============================================================
+// 取引一覧
+// ============================================================
+
+async function fetchTxPage(reset) {
+  if (reset) {
+    txListRows = [];
+    txListOffset = 0;
+    txListDone = false;
+  }
+  const page = await listLines(supabase, { ascending: false, limit: TX_PAGE_SIZE, offset: txListOffset }, memoKey);
+  txListRows = txListRows.concat(page);
+  txListOffset += page.length;
+  if (page.length < TX_PAGE_SIZE) txListDone = true;
+}
+
+function filterTxRows(rows, search) {
+  if (!search) return rows;
+  return rows.filter((l) =>
+    (l.from_name ?? '').toLowerCase().includes(search) ||
+    (l.to_name ?? '').toLowerCase().includes(search) ||
+    (l.memo ?? '').toLowerCase().includes(search));
+}
+
+function buildTxRows(rows) {
+  rows.forEach((l) => linesById.set(l.id, l));
+  return rows
+    .map((l) => `
+      <div class="tx-table-row">
+        <span class="mono" style="color:var(--muted);font-size:12.5px;">${l.occurred_on}</span>
+        <span>${esc(l.from_name)}</span>
+        <span>${esc(l.to_name)}</span>
+        <span style="font-size:12.5px;color:var(--faint);">${esc(l.memo ?? '')}</span>
+        <span class="mono neg" style="text-align:right;">${yen(l.amount)}</span>
+        <span style="display:flex;gap:4px;justify-content:flex-end;">
+          <button type="button" class="btn-sm tx-edit" data-id="${l.id}">編集</button>
+          <button type="button" class="btn-sm danger tx-delete" data-id="${l.id}">削除</button>
+        </span>
+      </div>
+    `)
+    .join('') || '<p style="padding:16px 0;font-size:13px;color:var(--faint);">該当する記録がありません</p>';
+}
+
+function renderTxListPage() {
+  const search = (state.txSearch ?? '').trim().toLowerCase();
+  const filtered = filterTxRows(txListRows, search);
+  const total = txListRows.length;
+
+  return `
+    <div class="breadcrumb"><a href="#" data-nav="dashboard">ダッシュボード</a><span>/</span><span>取引一覧</span></div>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h1>取引一覧</h1>
+          <p style="margin:2px 0 0;font-size:12.5px;color:var(--muted);">読み込み済み ${total} 件</p>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input id="tx-search" type="text" placeholder="メモ・ノードで検索" value="${esc(state.txSearch ?? '')}" style="padding:8px 11px;font-size:13px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);min-width:180px;">
+        </div>
+      </div>
+
+      <div style="margin-top:16px;">
+        <div class="tx-table-head">
+          <span>日付</span><span>出どころ</span><span>行き先</span><span>メモ</span><span style="text-align:right;">金額</span><span></span>
+        </div>
+        <div id="tx-rows">${buildTxRows(filtered)}</div>
+        <div style="display:flex;justify-content:center;padding:16px 0 18px;">
+          ${txListDone ? '<span style="font-size:12px;color:var(--faint);">すべて読み込みました</span>' : '<button id="load-more-btn" class="btn">さらに読み込む</button>'}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function wireTxList() {
+  attachTxRowActions(document.getElementById('tx-rows'));
+
+  document.getElementById('tx-search').addEventListener('input', (e) => {
+    state.txSearch = e.target.value;
+    renderTxRowsInPlace();
+  });
+
+  const loadMoreBtn = document.getElementById('load-more-btn');
+  if (loadMoreBtn) {
+    loadMoreBtn.addEventListener('click', async () => {
+      await fetchTxPage(false);
+      render();
+    });
+  }
+}
+
+function renderTxRowsInPlace() {
+  const search = (state.txSearch ?? '').trim().toLowerCase();
+  const rowsEl = document.getElementById('tx-rows');
+  rowsEl.innerHTML = buildTxRows(filterTxRows(txListRows, search));
+  attachTxRowActions(rowsEl);
+}
+
+// ============================================================
+// ノード一覧
+// ============================================================
+
+// Small inline line chart of a node's cumulative balance over time, for the
+// card view. Just draws already-fetched v_cumulative points - no aggregation.
+function renderSparkline(points, color, width = 100, height = 28) {
+  if (points.length < 2) return `<div style="height:${height}px;"></div>`;
+
+  const values = points.map((p) => Number(p.cumulative_balance));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const stepX = width / (values.length - 1);
+  const coords = values
+    .map((v, i) => `${(i * stepX).toFixed(1)},${(height - ((v - min) / range) * height).toFixed(1)}`)
+    .join(' ');
+
+  return `<svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" preserveAspectRatio="none" class="sparkline">
+    <polyline points="${coords}" fill="none" stroke="${color}" stroke-width="1.5" vector-effect="non-scaling-stroke" />
+  </svg>`;
+}
+
+const nodeRow = (balanceByNodeId, n, indent = 0) => `
+  <div class="row clickable" data-id="${n.id}" data-name="${esc(n.name)}" style="padding-left:${indent}px;">
+    <span class="${indent ? 'indent-name' : ''}" style="flex:1;">${esc(n.name)}</span>
+    <span class="mono">${yen(balanceByNodeId.get(n.id))}</span>
+  </div>
+`;
+
+function nodeCard(n, balanceByNodeId, { showPath = false, maxAbs = 1, sparkline = null } = {}) {
+  const balance = Number(balanceByNodeId.get(n.id) ?? 0);
+  const parentPath = showPath && n.path.includes(' > ') ? n.path.slice(0, n.path.lastIndexOf(' > ')) : '';
+  const type = NODE_TYPE_META[n.node_type];
+  const pct = Math.max(4, Math.round((Math.abs(balance) / maxAbs) * 100));
+  return `
+    <div class="node-card clickable" data-id="${n.id}" data-name="${esc(n.name)}" style="border-left-color:${type.color};">
+      <span class="badge" style="color:${type.color};">${type.label}</span>
+      ${parentPath ? `<span class="path">${esc(parentPath)}</span>` : ''}
+      <span class="name">${esc(n.name)}</span>
+      ${sparkline ? renderSparkline(sparkline, type.color) : ''}
+      <span class="balance mono ${balance < 0 ? 'neg' : ''}">${yen(balance)}</span>
+      <span class="mini-bar-track"><span class="mini-bar-fill" style="width:${pct}%;background:${type.color};"></span></span>
+    </div>
+  `;
+}
+
+async function renderNodesPage() {
+  const [nodes, balances] = await Promise.all([listNodesWithPaths(supabase), getRollupBalances(supabase)]);
+  const balanceByNodeId = new Map(balances.map((b) => [b.node_id, b.balance]));
+
+  const viewToggle = `
+    <div class="view-toggle">
+      <button type="button" id="view-list-btn" class="btn${nodeViewMode === 'list' ? ' selected' : ''}">リスト</button>
+      <button type="button" id="view-card-btn" class="btn${nodeViewMode === 'card' ? ' selected' : ''}">カード</button>
+    </div>
+  `;
+
+  const pageHead = (note) => `
+    <div class="stack" style="gap:12px;">
+      <div class="breadcrumb"><a href="#" data-nav="dashboard">ダッシュボード</a><span>/</span><span>ノード一覧</span></div>
+      <div class="card-head">
+        <div>
+          <h1>ノード一覧</h1>
+          <p style="margin:2px 0 0;font-size:12.5px;color:var(--muted);">${note}</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          ${viewToggle}
+          <button class="btn-primary" style="width:auto;" data-nav="manage">ノードを作成</button>
+        </div>
+      </div>
+  `;
+
+  if (nodeViewMode === 'card') {
+    // Color already distinguishes 資産/負債/収支, so card view mixes every
+    // node into one grid (biggest balance first) instead of boxed sections.
+    const allNodes = [...nodes].sort((a, b) =>
+      Math.abs(Number(balanceByNodeId.get(b.id) ?? 0)) - Math.abs(Number(balanceByNodeId.get(a.id) ?? 0))
+    );
+    const sparklines = await Promise.all(allNodes.map((n) => getCumulative(supabase, n.id)));
+    const sparklineByNodeId = new Map(allNodes.map((n, i) => [n.id, sparklines[i]]));
+    const maxAbs = Math.max(...allNodes.map((n) => Math.abs(Number(balanceByNodeId.get(n.id) ?? 0))), 1);
+
+    const cardsHtml = allNodes
+      .map((n) => nodeCard(n, balanceByNodeId, {
+        showPath: n.node_type === 'flow',
+        maxAbs,
+        sparkline: sparklineByNodeId.get(n.id)
+      }))
+      .join('');
+
+    return `
+      ${pageHead('残高の推移(折れ線)・大きさ順に並んでいます。色は資産/負債/収支。')}
+        <div class="node-card-grid">${cardsHtml || '<p style="font-size:12.5px;color:var(--faint);">ノードがありません</p>'}</div>
+      </div>
+    `;
+  }
+
+  const byType = { asset: [], liability: [], flow: [] };
+  nodes.forEach((n) => byType[n.node_type].push(n));
+
+  const flatSection = (label, note, list, totalColor = '') => {
+    const total = list.reduce((sum, n) => sum + Number(balanceByNodeId.get(n.id) ?? 0), 0);
+    const sorted = [...list].sort((a, b) => a.name.localeCompare(b.name));
+    const rows = sorted.map((n) => nodeRow(balanceByNodeId, n)).join('');
+    return `
+      <section class="card">
+        <div class="card-head">
+          <h3>${label}</h3>
+          <span class="mono" style="font-size:12.5px;${totalColor}">${yen(total)}</span>
+        </div>
+        <p class="card-note">${note}</p>
+        ${rows || '<p style="font-size:12.5px;color:var(--faint);">ノードがありません</p>'}
+      </section>
+    `;
+  };
+
+  const childrenByParent = new Map();
+  byType.flow.forEach((n) => {
+    const key = n.parent_id ?? 'root';
+    if (!childrenByParent.has(key)) childrenByParent.set(key, []);
+    childrenByParent.get(key).push(n);
+  });
+
+  const renderFlowNode = (n, depth = 0) => {
+    const children = (childrenByParent.get(n.id) ?? []).sort((a, b) => a.name.localeCompare(b.name));
+    const row = nodeRow(balanceByNodeId, n, depth * 16);
+    return row + children.map((c) => renderFlowNode(c, depth + 1)).join('');
+  };
+
+  const flowRoots = (childrenByParent.get('root') ?? []).sort((a, b) => a.name.localeCompare(b.name));
+  const flowTotal = byType.flow.reduce((sum, n) => sum + Number(balanceByNodeId.get(n.id) ?? 0), 0);
+  const flowItemsHtml = flowRoots.map((n) => renderFlowNode(n)).join('');
+
+  const spendingDestinations = computeSpendingDestinations(nodes, balanceByNodeId);
+  const spendTotal = spendingDestinations.reduce((sum, n) => sum + Number(balanceByNodeId.get(n.id)), 0);
+  const spendRows = spendingDestinations.map((n) => nodeRow(balanceByNodeId, n)).join('');
+
+  return `
+    ${pageHead('資産・負債は現在残高、支出・収入は子孫を含む累計です。')}
+      <div class="grid-fit-300">
+        ${flatSection('資産', '財布・銀行・電子マネーなど', byType.asset)}
+        ${flatSection('負債', '未払いのクレジット残など', byType.liability, 'color:var(--negative);')}
+        <section class="card">
+          <div class="card-head">
+            <h3>消費相手（多い順）</h3>
+            <span class="mono" style="font-size:12.5px;color:var(--negative);">${yen(spendTotal)}</span>
+          </div>
+          <p class="card-note">flow の葉ノード・残高が正のもの</p>
+          ${spendRows || '<p style="font-size:12.5px;color:var(--faint);">記録がありません</p>'}
+        </section>
+        <section class="card">
+          <div class="card-head">
+            <h3>支出・収入（階層）</h3>
+            <span class="mono" style="font-size:12.5px;">${yen(flowTotal)}</span>
+          </div>
+          <p class="card-note">子孫を含む累計</p>
+          ${flowItemsHtml || '<p style="font-size:12.5px;color:var(--faint);">ノードがありません</p>'}
+        </section>
+      </div>
+    </div>
+  `;
+}
+
+function wireNodesPage() {
+  const listBtn = document.getElementById('view-list-btn');
+  const cardBtn = document.getElementById('view-card-btn');
+  listBtn.addEventListener('click', () => {
+    nodeViewMode = 'list';
+    localStorage.setItem('kakeibo:nodeViewMode', nodeViewMode);
+    render();
+  });
+  cardBtn.addEventListener('click', () => {
+    nodeViewMode = 'card';
+    localStorage.setItem('kakeibo:nodeViewMode', nodeViewMode);
+    render();
+  });
+
+  root.querySelectorAll('.row.clickable, .node-card.clickable').forEach((el) => {
+    el.addEventListener('click', () => go('detail', { detailNodeId: el.dataset.id, detailName: el.dataset.name }));
+  });
+}
+
+// ============================================================
+// ノード詳細
+// ============================================================
+
+async function renderDetailPage() {
+  const nodeId = state.detailNodeId;
+  const label = nodesById.get(nodeId)?.path ?? state.detailName ?? nodeId;
+
+  const descendantIds = await getDescendantIds(supabase, nodeId);
+  const [cumulative, lines] = await Promise.all([
+    getCumulative(supabase, nodeId),
+    getLinesForNodes(supabase, descendantIds, memoKey)
+  ]);
+  chartData = cumulative;
+
+  const latestBalance = cumulative.length ? cumulative[cumulative.length - 1].cumulative_balance : 0;
+  const valueKey = chartMode === 'cumulative' ? 'cumulative_balance' : 'daily_delta';
+  const chartTitle = chartMode === 'cumulative' ? '残高推移（累積・日次）' : '増減（1日あたり）';
+  const chartMaxAbs = computeChartMaxAbs(chartData);
+
+  const detailRows = lines.map((l) => `
+    <div class="row">
+      <span class="row-date mono">${l.occurred_on}</span>
+      <span class="row-main">${esc(l.from_name)} → ${esc(l.to_name)}${l.memo ? ` <span class="row-memo">${esc(l.memo)}</span>` : ''}</span>
+      <span class="mono neg">${yen(l.amount)}</span>
+    </div>
+  `).join('') || '<p style="font-size:13px;color:var(--faint);">記録がありません</p>';
+
+  return `
+    <div class="breadcrumb"><a href="#" data-nav="nodes">ノード一覧</a><span>/</span><span>${esc(label)}</span></div>
+    <div class="grid-fit-320">
+      <section class="card">
+        <h1>${esc(label)}</h1>
+        <div class="stat-value mono">${yen(latestBalance)}</div>
+        <p style="margin:0 0 18px;font-size:12px;color:var(--muted);">子孫を含む累計・全期間</p>
+
+        <div class="chart-toggle">
+          <button type="button" id="chart-mode-cumulative" class="btn${chartMode === 'cumulative' ? ' selected' : ''}" style="${chartMode === 'cumulative' ? 'background:var(--text);color:#fff;' : ''}">累積推移</button>
+          <button type="button" id="chart-mode-daily" class="btn${chartMode === 'daily' ? ' selected' : ''}" style="${chartMode === 'daily' ? 'background:var(--text);color:#fff;' : ''}">1日あたり推移</button>
+        </div>
+        <div style="font-size:11.5px;color:var(--faint);margin:12px 0 6px;">${chartTitle}</div>
+        ${renderBarChartAxis(chartData, valueKey, chartMaxAbs)}
+        <div class="legend">
+          <span><span class="swatch" style="background:var(--accent);"></span>支出（プラス）</span>
+          <span><span class="swatch" style="background:var(--secondary);"></span>返金・収入</span>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>内訳</h2>
+        <p style="margin:2px 0 8px;font-size:12px;color:var(--muted);">このノードと子孫の記録</p>
+        <div id="detail-lines">${detailRows}</div>
+      </section>
+    </div>
+  `;
+}
+
+function wireDetailPage() {
+  document.getElementById('chart-mode-cumulative').addEventListener('click', () => {
+    chartMode = 'cumulative';
+    localStorage.setItem('kakeibo:chartMode', chartMode);
+    render();
+  });
+  document.getElementById('chart-mode-daily').addEventListener('click', () => {
+    chartMode = 'daily';
+    localStorage.setItem('kakeibo:chartMode', chartMode);
+    render();
+  });
+}
+
+// ============================================================
+// ノード管理
+// ============================================================
+
+async function renderManagePage() {
+  const nodes = await loadAllNodesWithPaths();
+  const pending = state.pendingPromote ?? null;
+
+  const parentOptions = ['<option value="">なし（ルートノード）</option>']
+    .concat(nodes.map((n) => `<option value="${n.id}" ${pending?.parentId === n.id ? 'selected' : ''}>${esc(n.path)}</option>`))
+    .join('');
+
+  const parentNode = pending ? nodesById.get(pending.parentId) : null;
+
+  const confirmBox = pending ? `
+    <div class="confirm-box">
+      <div style="font-size:12.5px;font-weight:700;margin-bottom:4px;">階層化の確認</div>
+      <p style="margin:0 0 12px;font-size:12.5px;color:var(--label);line-height:1.7;">
+        「${esc(parentNode?.name ?? '')}」には既に記録があります。既存の記録を「その他（${esc(parentNode?.name ?? '')}）」へ移して階層化しますか？
+      </p>
+      <div style="display:flex;gap:8px;">
+        <button id="confirm-promote-btn" class="btn" style="background:var(--text);color:#fff;border:none;">移して作成</button>
+        <button id="cancel-promote-btn" class="btn">やめる</button>
+      </div>
+    </div>
+  ` : '';
+
+  const treeRows = nodes
+    .slice()
+    .sort((a, b) => a.path.localeCompare(b.path))
+    .map((n) => {
+      const depth = n.path.split(' > ').length - 1;
+      return `
+        <div class="row">
+          <span style="padding-left:${depth * 16}px;${depth ? 'color:var(--muted);' : ''}">${esc(n.name)}</span>
+          <span style="font-size:11px;color:var(--faint);letter-spacing:0.03em;">${n.node_type}</span>
+        </div>
+      `;
+    })
+    .join('');
+
+  return `
+    <div class="breadcrumb"><a href="#" data-nav="nodes">ノード一覧</a><span>/</span><span>ノード管理</span></div>
+    <div class="grid-fit-320">
+      <section class="card">
+        <h1>ノード管理</h1>
+        <p style="margin:2px 0 20px;font-size:12.5px;color:var(--muted);">資産・負債・支出先を作成し、階層に組み込みます。</p>
+        <div class="stack" style="gap:16px;">
+          <label class="field">親ノード<select id="node-parent-select">${parentOptions}</select></label>
+          <label class="field">種別
+            <select id="node-type-select">
+              <option value="flow" ${(pending ? parentNode?.node_type : null) === 'flow' || !pending ? 'selected' : ''}>flow（支出・収入先）</option>
+              <option value="asset" ${parentNode?.node_type === 'asset' ? 'selected' : ''}>asset（資産）</option>
+              <option value="liability" ${parentNode?.node_type === 'liability' ? 'selected' : ''}>liability（負債）</option>
+            </select>
+          </label>
+          <label class="field">ノード名<input id="node-name" type="text" placeholder="例: マクドナルド" value="${esc(pending?.name ?? '')}"></label>
+          <button id="node-create-btn" class="btn-primary">ノードを作成</button>
+          <p id="node-create-error" style="color:var(--negative);font-size:12px;margin:0;"></p>
+        </div>
+        ${confirmBox}
+      </section>
+
+      <section class="card">
+        <h2>既存の階層</h2>
+        <p style="margin:2px 0 10px;font-size:12px;color:var(--muted);">一覧です（並べ替えは未対応）。</p>
+        <div id="tree-rows">${treeRows}</div>
+      </section>
+    </div>
+  `;
+}
+
+function wireManagePage() {
+  document.getElementById('node-parent-select').addEventListener('change', (e) => {
+    const typeSelect = document.getElementById('node-type-select');
+    const parent = nodesById.get(e.target.value);
+    if (parent) {
+      typeSelect.value = parent.node_type;
+      typeSelect.disabled = true;
+    } else {
+      typeSelect.disabled = false;
+    }
+  });
+
+  document.getElementById('node-create-btn').addEventListener('click', async () => {
+    const errorEl = document.getElementById('node-create-error');
+    errorEl.textContent = '';
+
+    const name = document.getElementById('node-name').value.trim();
+    const parentId = document.getElementById('node-parent-select').value || null;
+    const nodeType = document.getElementById('node-type-select').value;
+    if (!name) {
+      errorEl.textContent = 'ノード名を入力してください';
+      return;
+    }
+
+    const { data: { user } } = await supabase.auth.getUser();
+
+    try {
+      await createNode(supabase, { userId: user.id, name, parentId, nodeType });
+    } catch (error) {
+      if (parentId && error.message.includes('promote_to_parent')) {
+        state.pendingPromote = { parentId, nodeType, name };
+        render();
+        return;
+      }
+      errorEl.textContent = error.message;
+      return;
+    }
+
+    state.pendingPromote = null;
+    render();
+  });
+
+  const confirmBtn = document.getElementById('confirm-promote-btn');
+  if (confirmBtn) {
+    confirmBtn.addEventListener('click', async () => {
+      const pending = state.pendingPromote;
+      const { data: { user } } = await supabase.auth.getUser();
+      try {
+        await promoteToParent(supabase, pending.parentId);
+        await createNode(supabase, { userId: user.id, name: pending.name, parentId: pending.parentId, nodeType: pending.nodeType });
+      } catch (error) {
+        document.getElementById('node-create-error').textContent = error.message;
+        return;
+      }
+      state.pendingPromote = null;
+      render();
+    });
+  }
+
+  const cancelBtn = document.getElementById('cancel-promote-btn');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => {
+      state.pendingPromote = null;
+      render();
+    });
+  }
+}
+
+// ============================================================
+// 設定
+// ============================================================
+
+function renderSettingsPage() {
+  const defaultFrom = localStorage.getItem('kakeibo:defaultFromNodeId') ?? '';
+  const displayName = localStorage.getItem('kakeibo:displayName') ?? '';
+
+  return `
+    <div class="breadcrumb"><a href="#" data-nav="dashboard">ダッシュボード</a><span>/</span><span>設定</span></div>
+    <div class="grid-fit-300">
+      <section class="card">
+        <h1 style="margin-bottom:16px;">アカウント</h1>
+        <div class="stack" style="gap:14px;">
+          <label class="field">メールアドレス<input type="email" value="${esc(session?.user?.email ?? '')}" disabled></label>
+          <label class="field">表示名(この端末のみ)<input id="display-name" type="text" value="${esc(displayName)}"></label>
+          <button id="save-account-btn" class="btn" style="align-self:flex-start;">保存</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 style="margin-bottom:10px;">表示</h2>
+        <div class="row">
+          <div><div>通貨</div><div style="font-size:11.5px;color:var(--faint);">金額の表示形式</div></div>
+          <span class="btn" style="width:auto;cursor:default;">JPY ¥</span>
+        </div>
+        <div class="row">
+          <div><div>月の開始日</div><div style="font-size:11.5px;color:var(--faint);">集計の区切り</div></div>
+          <span class="btn" style="width:auto;cursor:default;">1 日</span>
+        </div>
+        <div class="row">
+          <div><div>既定の出どころ</div><div style="font-size:11.5px;color:var(--faint);">記録画面の初期値(この端末のみ)</div></div>
+          <select id="default-from-select" style="width:auto;padding:5px 10px;font-size:12.5px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);"></select>
+        </div>
+        <div class="row">
+          <div><div>グラフの既定表示</div><div style="font-size:11.5px;color:var(--faint);">ノード詳細(この端末のみ)</div></div>
+          <select id="default-chart-select" style="width:auto;padding:5px 10px;font-size:12.5px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
+            <option value="cumulative" ${chartMode === 'cumulative' ? 'selected' : ''}>累積推移</option>
+            <option value="daily" ${chartMode === 'daily' ? 'selected' : ''}>1日あたり推移</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 style="margin-bottom:10px;">データ</h2>
+        <div class="stack" style="gap:8px;align-items:flex-start;">
+          <button id="csv-export-btn" class="btn">CSV を書き出す</button>
+          <button id="csv-import-btn" class="btn">CSV を取り込む</button>
+          <button id="settings-logout-btn" class="btn-danger-outline">ログアウト</button>
+        </div>
+        <p style="margin:16px 0 0;font-size:11.5px;color:var(--faint);line-height:1.7;">記録は Supabase に保存され、memoは端末上で暗号化されます。</p>
+      </section>
+    </div>
+  `;
+}
+
+async function wireSettingsPage() {
+  document.getElementById('save-account-btn').addEventListener('click', () => {
+    localStorage.setItem('kakeibo:displayName', document.getElementById('display-name').value);
+  });
+
+  const leaves = await getLeafNodes(supabase);
+  const currentDefault = localStorage.getItem('kakeibo:defaultFromNodeId') ?? '';
+  const fromSelect = document.getElementById('default-from-select');
+  fromSelect.innerHTML = leaves.map((n) => `<option value="${n.id}" ${n.id === currentDefault ? 'selected' : ''}>${esc(n.name)}</option>`).join('');
+  fromSelect.addEventListener('change', (e) => localStorage.setItem('kakeibo:defaultFromNodeId', e.target.value));
+
+  document.getElementById('default-chart-select').addEventListener('change', (e) => {
+    chartMode = e.target.value;
+    localStorage.setItem('kakeibo:chartMode', chartMode);
+  });
+
+  document.getElementById('csv-export-btn').addEventListener('click', () => alert('準備中: CSVの書き出しは未実装です。'));
+  document.getElementById('csv-import-btn').addEventListener('click', () => alert('準備中: CSVの取り込みは未実装です。'));
+
+  document.getElementById('settings-logout-btn').addEventListener('click', async () => {
+    await supabase.auth.signOut();
+    session = null;
+    go('login');
+  });
+}
+
+// ============================================================
+// Router / top-level render
+// ============================================================
+
+async function render() {
+  if (!session) {
+    root.innerHTML = renderLoginPage();
+    wireLogin();
+    return;
+  }
+
+  let pageHtml = '';
+  let wire = () => {};
+
+  switch (state.page) {
+    case 'record':
+      pageHtml = await renderRecordPage();
+      wire = wireRecord;
+      break;
+    case 'tx':
+      if (txListRows.length === 0) await fetchTxPage(true);
+      pageHtml = renderTxListPage();
+      wire = wireTxList;
+      break;
+    case 'nodes':
+      pageHtml = await renderNodesPage();
+      wire = wireNodesPage;
+      break;
+    case 'detail':
+      pageHtml = await renderDetailPage();
+      wire = wireDetailPage;
+      break;
+    case 'manage':
+      pageHtml = await renderManagePage();
+      wire = wireManagePage;
+      break;
+    case 'settings':
+      pageHtml = renderSettingsPage();
+      wire = wireSettingsPage;
+      break;
+    case 'dashboard':
+    default:
+      pageHtml = await renderDashboardPage();
+      wire = wireDashboard;
+  }
+
+  root.innerHTML = `<div class="app-shell">${renderHeader()}<main>${pageHtml}</main></div>`;
+  wireHeader();
+  await wire();
+}
+
+const { data: { session: existingSession } } = await supabase.auth.getSession();
+if (existingSession) {
+  session = existingSession;
+  go('record');
+} else {
+  render();
+}
+</script>
+</body>
+</html>
