@@ -99,6 +99,12 @@
   .indent-name { color: var(--muted); }
 
   .view-toggle { display: flex; gap: 6px; }
+  .hide-toggle-btn { width: auto; padding: 5px 11px; font-size: 11.5px; }
+  .node-hide-btn {
+    width: auto; flex: 0 0 auto; padding: 2px 4px; margin: 0; font-size: 13px; line-height: 1;
+    background: transparent; border: none; cursor: pointer; opacity: .55;
+  }
+  .node-hide-btn:hover { opacity: 1; }
   .node-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-top: 2px; }
   .node-card {
     background: var(--input-bg); border: 1px solid var(--card-border); border-left: 4px solid var(--card-border); border-radius: 10px;
@@ -159,7 +165,7 @@ import {
 import { recordLine, reviseLine, deleteLine } from './packages/core/lines.js';
 import {
   listLines, getNetWorth, getRollupBalances, getCumulative, getLinesForNodes,
-  getNetWorthDaily, getMonthlyFlow
+  getNetWorthDaily, getMonthlyFlow, getDailyDeltas
 } from './packages/core/reports.js';
 import { importMemoKey } from './packages/core/crypto.js';
 
@@ -179,6 +185,8 @@ let session = null;
 let state = { page: 'login', detailNodeId: null };
 let chartMode = localStorage.getItem('kakeibo:chartMode') || 'cumulative';
 let nodeViewMode = localStorage.getItem('kakeibo:nodeViewMode') || 'list';
+let netWorthHidden = localStorage.getItem('kakeibo:netWorthHidden') === 'true';
+let hiddenNodeIds = new Set(JSON.parse(localStorage.getItem('kakeibo:hiddenNodeIds') || '[]'));
 let selectedToNode = null;
 let editingLineId = null;
 let nodesById = new Map();
@@ -198,12 +206,81 @@ function yen(n) {
   return (v < 0 ? '−' : '') + Math.abs(v).toLocaleString('ja-JP');
 }
 
+// Two independent masking controls: one for the dashboard's net worth /
+// monthly flow stats, and one per node (so e.g. a salary or a specific
+// liability can be hidden while everything else stays visible). Transaction
+// amounts are left alone either way - hiding what things cost isn't the
+// point, hiding how much money there is, is.
+function maskNetWorthYen(n) {
+  return netWorthHidden ? '••••••' : yen(n);
+}
+
+function netWorthHideToggleButton() {
+  return `<button type="button" class="btn hide-toggle-btn" data-action="toggle-net-worth-hide">${netWorthHidden ? '表示' : '非表示'}</button>`;
+}
+
+function toggleNetWorthHidden() {
+  netWorthHidden = !netWorthHidden;
+  localStorage.setItem('kakeibo:netWorthHidden', String(netWorthHidden));
+  render();
+}
+
+function isNodeHidden(nodeId) {
+  return hiddenNodeIds.has(nodeId);
+}
+
+function maskNodeYen(nodeId, n) {
+  return isNodeHidden(nodeId) ? '••••••' : yen(n);
+}
+
+// Small icon-only toggle meant to sit inside a clickable row/card; callers
+// must stopPropagation so it doesn't also trigger the row's own click.
+function nodeHideToggleButton(nodeId) {
+  return `<button type="button" class="node-hide-btn" data-node-hide-id="${nodeId}" title="${isNodeHidden(nodeId) ? 'このノードを表示' : 'このノードを非表示'}">${isNodeHidden(nodeId) ? '🙈' : '🐵'}</button>`;
+}
+
+function toggleNodeHidden(nodeId) {
+  if (hiddenNodeIds.has(nodeId)) hiddenNodeIds.delete(nodeId);
+  else hiddenNodeIds.add(nodeId);
+  localStorage.setItem('kakeibo:hiddenNodeIds', JSON.stringify([...hiddenNodeIds]));
+  render();
+}
+
 function todayISODate() {
   return new Date().toISOString().slice(0, 10);
 }
 
 function monthStart(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+const SPEND_PERIODS = {
+  month: '今月',
+  last_month: '先月',
+  '30d': '直近30日',
+  all: '全期間'
+};
+
+// {from, to} bounds (or {null, null} for "all") to scope 消費相手 上位 by.
+function periodRange(period) {
+  const today = new Date();
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  if (period === 'month') return { from: monthStart(today), to: iso(today) };
+
+  if (period === 'last_month') {
+    const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const lastDayOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+    return { from: monthStart(lastMonth), to: iso(lastDayOfLastMonth) };
+  }
+
+  if (period === '30d') {
+    const from = new Date(today);
+    from.setDate(from.getDate() - 30);
+    return { from: iso(from), to: iso(today) };
+  }
+
+  return { from: null, to: null };
 }
 
 function go(page, extra = {}) {
@@ -253,7 +330,7 @@ function renderTxRow(l) {
         <div>${esc(l.from_name)} → ${esc(l.to_name)}</div>
         ${l.memo ? `<div class="row-memo">${esc(l.memo)}</div>` : ''}
       </div>
-      <span class="mono neg">${yen(l.amount)}</span>
+      <span class="mono">${yen(l.amount)}</span>
       <span class="row-actions">
         <button type="button" class="btn-sm tx-edit" data-id="${l.id}">編集</button>
         <button type="button" class="btn-sm danger tx-delete" data-id="${l.id}">削除</button>
@@ -306,7 +383,7 @@ function computeChartMaxAbs(points) {
   );
 }
 
-function renderBarChartAxis(points, valueKey, maxAbs) {
+function renderBarChartAxis(points, valueKey, maxAbs, hidden) {
   if (points.length === 0) return '<p style="font-size:13px;color:var(--faint);">データなし</p>';
 
   const half = 40;
@@ -315,7 +392,7 @@ function renderBarChartAxis(points, valueKey, maxAbs) {
     const posHeight = value > 0 ? Math.max(2, Math.round((value / maxAbs) * half)) : 0;
     const negHeight = value < 0 ? Math.max(2, Math.round((Math.abs(value) / maxAbs) * half)) : 0;
     return `
-      <div class="bar-col" title="${p.occurred_on}: ${value}">
+      <div class="bar-col" title="${p.occurred_on}: ${hidden ? '••••••' : value}">
         <div class="bar-top"><div class="bar pos-bar" style="height:${posHeight}px"></div></div>
         <div class="bar-bottom"><div class="bar neg-bar" style="height:${negHeight}px"></div></div>
       </div>
@@ -323,13 +400,14 @@ function renderBarChartAxis(points, valueKey, maxAbs) {
   }).join('');
 
   const mid = points[Math.floor(points.length / 2)];
+  const axisLabel = (n) => (hidden ? '••••••' : yen(n));
 
   return `
     <div style="display:flex;gap:8px;align-items:stretch;">
       <div class="y-axis-labels mono">
-        <span>${yen(maxAbs)}</span>
+        <span>${axisLabel(maxAbs)}</span>
         <span>0</span>
-        <span>${yen(-maxAbs)}</span>
+        <span>${axisLabel(-maxAbs)}</span>
       </div>
       <div class="bar-chart-axis" style="flex:1;">${bars}</div>
     </div>
@@ -432,25 +510,40 @@ async function renderDashboardPage() {
   const trendBars = trendPoints
     .map((p) => {
       const pct = Math.max(4, Math.round(((Number(p.net_worth) - trendMin) / (trendMax - trendMin || 1)) * 100));
-      return `<div style="height:${pct}%" title="${p.occurred_on}: ${yen(p.net_worth)}"></div>`;
+      return `<div style="height:${pct}%" title="${p.occurred_on}: ${maskNetWorthYen(p.net_worth)}"></div>`;
     })
     .join('');
 
-  const spendingDestinations = computeSpendingDestinations(nodes, balanceByNodeId).slice(0, 5);
-  const maxSpend = Math.max(...spendingDestinations.map((n) => Number(balanceByNodeId.get(n.id))), 1);
+  const spendPeriod = state.spendPeriod ?? 'month';
+  const { from: spendFrom, to: spendTo } = periodRange(spendPeriod);
+  const spendDeltas = await getDailyDeltas(supabase, { from: spendFrom, to: spendTo });
+  const periodBalanceByNodeId = new Map();
+  spendDeltas.forEach((d) => {
+    periodBalanceByNodeId.set(d.node_id, (periodBalanceByNodeId.get(d.node_id) ?? 0) + Number(d.delta));
+  });
+
+  const spendingDestinations = computeSpendingDestinations(nodes, periodBalanceByNodeId).slice(0, 5);
+  const maxSpend = Math.max(...spendingDestinations.map((n) => Number(periodBalanceByNodeId.get(n.id))), 1);
   const topSpendRows = spendingDestinations
     .map((n) => {
-      const amount = Number(balanceByNodeId.get(n.id));
+      const amount = Number(periodBalanceByNodeId.get(n.id));
       const pct = Math.max(4, Math.round((amount / maxSpend) * 100));
       return `
         <div class="row">
           <span style="flex:0 0 auto;min-width:118px;">${esc(n.name)}</span>
           <span class="progress-track"><span class="progress-fill" style="width:${pct}%"></span></span>
-          <span class="mono" style="min-width:74px;text-align:right;">${yen(amount)}</span>
+          <span class="mono" style="min-width:74px;text-align:right;">${maskNodeYen(n.id, amount)}</span>
+          ${nodeHideToggleButton(n.id)}
         </div>
       `;
     })
-    .join('') || '<p style="font-size:13px;color:var(--faint);">まだ記録がありません</p>';
+    .join('') || '<p style="font-size:13px;color:var(--faint);">この期間の記録がありません</p>';
+
+  const spendPeriodSelect = `
+    <select id="spend-period-select" style="width:auto;padding:5px 8px;font-size:11.5px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
+      ${Object.entries(SPEND_PERIODS).map(([value, label]) => `<option value="${value}" ${spendPeriod === value ? 'selected' : ''}>${label}</option>`).join('')}
+    </select>
+  `;
 
   const recentRows = recentLines.map((l) => renderTxRow(l)).join('') || '<p style="font-size:13px;color:var(--faint);">まだ記録がありません</p>';
 
@@ -470,16 +563,19 @@ async function renderDashboardPage() {
 
       <div class="grid-fit">
         <div class="card">
-          <div class="stat-label">純資産</div>
-          <div class="stat-value mono">${yen(netWorth.net_worth)}</div>
+          <div class="card-head">
+            <div class="stat-label">純資産</div>
+            ${netWorthHideToggleButton()}
+          </div>
+          <div class="stat-value mono">${maskNetWorthYen(netWorth.net_worth)}</div>
         </div>
         <div class="card">
           <div class="stat-label">今月の支出</div>
-          <div class="stat-value mono neg">${yen(monthlyFlow.spend)}</div>
+          <div class="stat-value mono neg">${maskNetWorthYen(monthlyFlow.spend)}</div>
         </div>
         <div class="card">
           <div class="stat-label">今月の収入</div>
-          <div class="stat-value mono pos">${yen(monthlyFlow.income)}</div>
+          <div class="stat-value mono pos">${maskNetWorthYen(monthlyFlow.income)}</div>
         </div>
       </div>
 
@@ -502,7 +598,10 @@ async function renderDashboardPage() {
         <section class="card">
           <div class="card-head">
             <h2>消費相手 上位</h2>
-            <button class="btn" style="width:auto;padding:5px 11px;font-size:11.5px;" data-nav="nodes">ノード一覧</button>
+            <div style="display:flex;gap:6px;align-items:center;">
+              ${spendPeriodSelect}
+              <button class="btn" style="width:auto;padding:5px 11px;font-size:11.5px;" data-nav="nodes">ノード一覧</button>
+            </div>
           </div>
           <div style="margin-top:10px;">${topSpendRows}</div>
         </section>
@@ -521,6 +620,10 @@ async function renderDashboardPage() {
 
 function wireDashboard() {
   attachTxRowActions(root);
+  document.getElementById('spend-period-select').addEventListener('change', (e) => {
+    state.spendPeriod = e.target.value;
+    render();
+  });
 }
 
 // ============================================================
@@ -528,10 +631,17 @@ function wireDashboard() {
 // ============================================================
 
 async function renderRecordPage() {
+  // editingLineId/selectedToNode are plain globals, not part of `state`, so
+  // they must be derived fresh from state.editLine on every render - not
+  // just set when editing, or a fresh (non-edit) visit to this page after an
+  // earlier edit session would keep showing 更新 instead of 登録.
   const editLine = state.editLine ?? null;
   if (editLine) {
     editingLineId = editLine.id;
     selectedToNode = { id: editLine.to_node, path: editLine.to_name };
+  } else {
+    editingLineId = null;
+    selectedToNode = null;
   }
 
   const [assetsAndLiabilities, suggestions, todayLines] = await Promise.all([
@@ -710,7 +820,7 @@ function buildTxRows(rows) {
         <span>${esc(l.from_name)}</span>
         <span>${esc(l.to_name)}</span>
         <span style="font-size:12.5px;color:var(--faint);">${esc(l.memo ?? '')}</span>
-        <span class="mono neg" style="text-align:right;">${yen(l.amount)}</span>
+        <span class="mono" style="text-align:right;">${yen(l.amount)}</span>
         <span style="display:flex;gap:4px;justify-content:flex-end;">
           <button type="button" class="btn-sm tx-edit" data-id="${l.id}">編集</button>
           <button type="button" class="btn-sm danger tx-delete" data-id="${l.id}">削除</button>
@@ -801,7 +911,8 @@ function renderSparkline(points, color, width = 100, height = 28) {
 const nodeRow = (balanceByNodeId, n, indent = 0) => `
   <div class="row clickable" data-id="${n.id}" data-name="${esc(n.name)}" style="padding-left:${indent}px;">
     <span class="${indent ? 'indent-name' : ''}" style="flex:1;">${esc(n.name)}</span>
-    <span class="mono">${yen(balanceByNodeId.get(n.id))}</span>
+    <span class="mono">${maskNodeYen(n.id, balanceByNodeId.get(n.id))}</span>
+    ${nodeHideToggleButton(n.id)}
   </div>
 `;
 
@@ -812,11 +923,14 @@ function nodeCard(n, balanceByNodeId, { showPath = false, maxAbs = 1, sparkline 
   const pct = Math.max(4, Math.round((Math.abs(balance) / maxAbs) * 100));
   return `
     <div class="node-card clickable" data-id="${n.id}" data-name="${esc(n.name)}" style="border-left-color:${type.color};">
-      <span class="badge" style="color:${type.color};">${type.label}</span>
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <span class="badge" style="color:${type.color};">${type.label}</span>
+        ${nodeHideToggleButton(n.id)}
+      </div>
       ${parentPath ? `<span class="path">${esc(parentPath)}</span>` : ''}
       <span class="name">${esc(n.name)}</span>
       ${sparkline ? renderSparkline(sparkline, type.color) : ''}
-      <span class="balance mono ${balance < 0 ? 'neg' : ''}">${yen(balance)}</span>
+      <span class="balance mono ${balance < 0 ? 'neg' : ''}">${maskNodeYen(n.id, balance)}</span>
       <span class="mini-bar-track"><span class="mini-bar-fill" style="width:${pct}%;background:${type.color};"></span></span>
     </div>
   `;
@@ -842,6 +956,7 @@ async function renderNodesPage() {
           <p style="margin:2px 0 0;font-size:12.5px;color:var(--muted);">${note}</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
+          ${netWorthHideToggleButton()}
           ${viewToggle}
           <button class="btn-primary" style="width:auto;" data-nav="manage">ノードを作成</button>
         </div>
@@ -877,14 +992,19 @@ async function renderNodesPage() {
   nodes.forEach((n) => byType[n.node_type].push(n));
 
   const flatSection = (label, note, list, totalColor = '') => {
-    const total = list.reduce((sum, n) => sum + Number(balanceByNodeId.get(n.id) ?? 0), 0);
+    // Sum only roots: a rollup balance already includes its whole subtree,
+    // so summing every node in `list` would double/triple-count any node
+    // that has children within the same section (e.g. 立て替え > 友人A).
+    const total = list
+      .filter((n) => !n.parent_id)
+      .reduce((sum, n) => sum + Number(balanceByNodeId.get(n.id) ?? 0), 0);
     const sorted = [...list].sort((a, b) => a.name.localeCompare(b.name));
     const rows = sorted.map((n) => nodeRow(balanceByNodeId, n)).join('');
     return `
       <section class="card">
         <div class="card-head">
           <h3>${label}</h3>
-          <span class="mono" style="font-size:12.5px;${totalColor}">${yen(total)}</span>
+          <span class="mono" style="font-size:12.5px;${totalColor}">${maskNetWorthYen(total)}</span>
         </div>
         <p class="card-note">${note}</p>
         ${rows || '<p style="font-size:12.5px;color:var(--faint);">ノードがありません</p>'}
@@ -906,7 +1026,8 @@ async function renderNodesPage() {
   };
 
   const flowRoots = (childrenByParent.get('root') ?? []).sort((a, b) => a.name.localeCompare(b.name));
-  const flowTotal = byType.flow.reduce((sum, n) => sum + Number(balanceByNodeId.get(n.id) ?? 0), 0);
+  // Same reasoning as flatSection: sum roots only, not every flow node.
+  const flowTotal = flowRoots.reduce((sum, n) => sum + Number(balanceByNodeId.get(n.id) ?? 0), 0);
   const flowItemsHtml = flowRoots.map((n) => renderFlowNode(n)).join('');
 
   const spendingDestinations = computeSpendingDestinations(nodes, balanceByNodeId);
@@ -921,7 +1042,7 @@ async function renderNodesPage() {
         <section class="card">
           <div class="card-head">
             <h3>消費相手（多い順）</h3>
-            <span class="mono" style="font-size:12.5px;color:var(--negative);">${yen(spendTotal)}</span>
+            <span class="mono" style="font-size:12.5px;color:var(--negative);">${maskNetWorthYen(spendTotal)}</span>
           </div>
           <p class="card-note">flow の葉ノード・残高が正のもの</p>
           ${spendRows || '<p style="font-size:12.5px;color:var(--faint);">記録がありません</p>'}
@@ -929,7 +1050,7 @@ async function renderNodesPage() {
         <section class="card">
           <div class="card-head">
             <h3>支出・収入（階層）</h3>
-            <span class="mono" style="font-size:12.5px;">${yen(flowTotal)}</span>
+            <span class="mono" style="font-size:12.5px;">${maskNetWorthYen(flowTotal)}</span>
           </div>
           <p class="card-note">子孫を含む累計</p>
           ${flowItemsHtml || '<p style="font-size:12.5px;color:var(--faint);">ノードがありません</p>'}
@@ -982,7 +1103,7 @@ async function renderDetailPage() {
     <div class="row">
       <span class="row-date mono">${l.occurred_on}</span>
       <span class="row-main">${esc(l.from_name)} → ${esc(l.to_name)}${l.memo ? ` <span class="row-memo">${esc(l.memo)}</span>` : ''}</span>
-      <span class="mono neg">${yen(l.amount)}</span>
+      <span class="mono">${yen(l.amount)}</span>
     </div>
   `).join('') || '<p style="font-size:13px;color:var(--faint);">記録がありません</p>';
 
@@ -990,8 +1111,11 @@ async function renderDetailPage() {
     <div class="breadcrumb"><a href="#" data-nav="nodes">ノード一覧</a><span>/</span><span>${esc(label)}</span></div>
     <div class="grid-fit-320">
       <section class="card">
-        <h1>${esc(label)}</h1>
-        <div class="stat-value mono">${yen(latestBalance)}</div>
+        <div class="card-head">
+          <h1>${esc(label)}</h1>
+          ${nodeHideToggleButton(nodeId)}
+        </div>
+        <div class="stat-value mono">${maskNodeYen(nodeId, latestBalance)}</div>
         <p style="margin:0 0 18px;font-size:12px;color:var(--muted);">子孫を含む累計・全期間</p>
 
         <div class="chart-toggle">
@@ -999,7 +1123,7 @@ async function renderDetailPage() {
           <button type="button" id="chart-mode-daily" class="btn${chartMode === 'daily' ? ' selected' : ''}" style="${chartMode === 'daily' ? 'background:var(--text);color:#fff;' : ''}">1日あたり推移</button>
         </div>
         <div style="font-size:11.5px;color:var(--faint);margin:12px 0 6px;">${chartTitle}</div>
-        ${renderBarChartAxis(chartData, valueKey, chartMaxAbs)}
+        ${renderBarChartAxis(chartData, valueKey, chartMaxAbs, isNodeHidden(nodeId))}
         <div class="legend">
           <span><span class="swatch" style="background:var(--accent);"></span>支出（プラス）</span>
           <span><span class="swatch" style="background:var(--secondary);"></span>返金・収入</span>
@@ -1298,6 +1422,15 @@ async function render() {
 
   root.innerHTML = `<div class="app-shell">${renderHeader()}<main>${pageHtml}</main></div>`;
   wireHeader();
+  root.querySelectorAll('[data-action="toggle-net-worth-hide"]').forEach((btn) => {
+    btn.addEventListener('click', toggleNetWorthHidden);
+  });
+  root.querySelectorAll('[data-node-hide-id]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleNodeHidden(btn.dataset.nodeHideId);
+    });
+  });
   await wire();
 }
 
