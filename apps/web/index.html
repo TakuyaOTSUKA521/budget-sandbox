@@ -108,13 +108,19 @@
   .clickable { cursor: pointer; }
   .indent-name { color: var(--muted); }
 
-  .view-toggle { display: flex; gap: 6px; }
-  .hide-toggle-btn { width: auto; padding: 5px 11px; font-size: 11.5px; }
+  .view-toggle { display: inline-flex; gap: 2px; padding: 3px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 999px; }
+  .view-toggle .btn { border: none; background: transparent; padding: 6px 14px; border-radius: 999px; color: var(--muted); }
+  .view-toggle .btn.selected { background: var(--text); color: #fff; }
   .node-hide-btn {
     width: auto; flex: 0 0 auto; padding: 2px 4px; margin: 0; font-size: 13px; line-height: 1;
     background: transparent; border: none; cursor: pointer; opacity: .55;
   }
   .node-hide-btn:hover { opacity: 1; }
+  .tree-toggle-btn, .tree-toggle-spacer { width: 16px; flex: 0 0 auto; }
+  .tree-toggle-btn {
+    padding: 0; margin: 0; font-size: 10px; line-height: 1; text-align: center;
+    background: transparent; border: none; cursor: pointer; color: var(--muted);
+  }
   .node-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-top: 2px; }
   .node-card {
     background: var(--input-bg); border: 1px solid var(--card-border); border-left: 4px solid var(--card-border); border-radius: 10px;
@@ -169,8 +175,8 @@
 <script type="module">
 import { createSupabaseClient } from './packages/core/client.js';
 import {
-  getLeafNodes, getNodeSuggestions, searchNodes, createNode, promoteToParent,
-  listNodesWithPaths, listNodes, getDescendantIds
+  getLeafNodes, getNodeSuggestions, searchNodes, createNode, updateNode, deleteNode, promoteToParent,
+  listNodesWithPaths, listNodes, getDescendantIds, archiveNode, unarchiveNode
 } from './packages/core/nodes.js';
 import { recordLine, reviseLine, deleteLine } from './packages/core/lines.js';
 import {
@@ -195,8 +201,12 @@ let session = null;
 let state = { page: 'login', detailNodeId: null };
 let chartMode = localStorage.getItem('kakeibo:chartMode') || 'cumulative';
 let nodeViewMode = localStorage.getItem('kakeibo:nodeViewMode') || 'list';
-let netWorthHidden = localStorage.getItem('kakeibo:netWorthHidden') === 'true';
 let hiddenNodeIds = new Set(JSON.parse(localStorage.getItem('kakeibo:hiddenNodeIds') || '[]'));
+let showArchivedNodes = false;
+// Which parent nodes are expanded in a collapsible hierarchy view (node
+// list's 資産/負債/支出・収入 sections, node management's tree). Starts empty
+// so every tree opens collapsed to just its top level (DESIGN.md UX方針).
+let expandedNodeIds = new Set();
 let selectedToNode = null;
 let editingLineId = null;
 let nodesById = new Map();
@@ -216,25 +226,9 @@ function yen(n) {
   return (v < 0 ? '−' : '') + Math.abs(v).toLocaleString('ja-JP');
 }
 
-// Two independent masking controls: one for the dashboard's net worth /
-// monthly flow stats, and one per node (so e.g. a salary or a specific
-// liability can be hidden while everything else stays visible). Transaction
-// amounts are left alone either way - hiding what things cost isn't the
-// point, hiding how much money there is, is.
-function maskNetWorthYen(n) {
-  return netWorthHidden ? '••••••' : yen(n);
-}
-
-function netWorthHideToggleButton() {
-  return `<button type="button" class="btn hide-toggle-btn" data-action="toggle-net-worth-hide">${netWorthHidden ? '表示' : '非表示'}</button>`;
-}
-
-function toggleNetWorthHidden() {
-  netWorthHidden = !netWorthHidden;
-  localStorage.setItem('kakeibo:netWorthHidden', String(netWorthHidden));
-  render();
-}
-
+// Per-node masking (so e.g. a salary or a specific liability can be hidden
+// while everything else stays visible). Transaction amounts are left alone -
+// hiding what things cost isn't the point, hiding how much money there is, is.
 function isNodeHidden(nodeId) {
   return hiddenNodeIds.has(nodeId);
 }
@@ -254,6 +248,49 @@ function toggleNodeHidden(nodeId) {
   else hiddenNodeIds.add(nodeId);
   localStorage.setItem('kakeibo:hiddenNodeIds', JSON.stringify([...hiddenNodeIds]));
   render();
+}
+
+// Archiving (is_archived) removes a node from the node list entirely - unlike
+// the mask toggle above, which only hides the amount. Meant for leaf nodes
+// that turned out to have no practical use; restorable via 復元.
+function nodeArchiveButton(nodeId) {
+  return `<button type="button" class="node-hide-btn" data-node-archive-id="${nodeId}" title="このノードをアーカイブ(一覧から隠す)">📦</button>`;
+}
+
+async function handleArchiveNode(nodeId) {
+  if (!confirm('このノードをアーカイブしますか？一覧から隠れます（記録は残ります）。')) return;
+  await archiveNode(supabase, nodeId);
+  await render();
+}
+
+async function handleUnarchiveNode(nodeId) {
+  await unarchiveNode(supabase, nodeId);
+  await render();
+}
+
+// Deletion also supersedes every line touching the node (see nodes.js#deleteNode) -
+// a transaction always has two ends, so removing it changes both nodes' history,
+// not just the one being deleted here.
+async function handleDeleteNode(nodeId) {
+  const node = nodesById.get(nodeId);
+  const label = node?.path ?? node?.name ?? nodeId;
+  if (!confirm(`「${label}」を削除しますか？関連する取引もすべて削除されます（元に戻せません）。`)) return;
+
+  let result;
+  try {
+    result = await deleteNode(supabase, nodeId);
+  } catch (error) {
+    alert(error.message);
+    return;
+  }
+
+  if (state.editNode?.id === nodeId) state.editNode = null;
+  invalidateTxCache();
+  await render();
+
+  if (result.archived) {
+    alert('過去の取引履歴が残っているため完全な削除はできず、取引を削除したうえでノードをアーカイブしました。');
+  }
 }
 
 function todayISODate() {
@@ -325,6 +362,55 @@ function computeSpendingDestinations(nodes, balanceByNodeId) {
     .filter((n) => n.node_type === 'flow' && !parentIds.has(n.id))
     .filter((n) => Number(balanceByNodeId.get(n.id) ?? 0) > 0)
     .sort((a, b) => Number(balanceByNodeId.get(b.id)) - Number(balanceByNodeId.get(a.id)));
+}
+
+// Groups `list` by parent_id (root nodes under the 'root' key) - the shared
+// basis for every collapsible-tree render below.
+function buildChildrenMap(list) {
+  const map = new Map();
+  list.forEach((n) => {
+    const key = n.parent_id ?? 'root';
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(n);
+  });
+  return map;
+}
+
+function isNodeExpanded(nodeId) {
+  return expandedNodeIds.has(nodeId);
+}
+
+function toggleNodeExpanded(nodeId) {
+  if (expandedNodeIds.has(nodeId)) expandedNodeIds.delete(nodeId);
+  else expandedNodeIds.add(nodeId);
+  render();
+}
+
+// Caret shown in place of nodeHideToggleButton/nodeArchiveButton's spot when
+// a row has children to fold away; a fixed-width spacer otherwise, so leaf
+// rows in the same tree still line up with their siblings that have one.
+function treeToggleCell(nodeId, hasChildren) {
+  if (!hasChildren) return '<span class="tree-toggle-spacer"></span>';
+  const expanded = isNodeExpanded(nodeId);
+  return `<button type="button" class="tree-toggle-btn" data-tree-toggle-id="${nodeId}" title="${expanded ? '折りたたむ' : '展開する'}">${expanded ? '▾' : '▸'}</button>`;
+}
+
+// Renders `list` (a single node_type's nodes) as a collapsible tree: each
+// root and each expanded node's children, recursively. Nodes collapse to
+// just their top level by default (DESIGN.md UX方針) - this is what keeps a
+// node's own row from also being duplicated by every descendant appearing
+// in the same flat section.
+function renderNodeTree(list, rowRenderer) {
+  const childrenByParent = buildChildrenMap(list);
+  const renderNode = (n, depth) => {
+    const children = (childrenByParent.get(n.id) ?? []).sort((a, b) => a.name.localeCompare(b.name));
+    const expanded = children.length > 0 && isNodeExpanded(n.id);
+    const row = rowRenderer(n, depth, children.length > 0);
+    const childrenHtml = expanded ? children.map((c) => renderNode(c, depth + 1)).join('') : '';
+    return row + childrenHtml;
+  };
+  const roots = (childrenByParent.get('root') ?? []).sort((a, b) => a.name.localeCompare(b.name));
+  return roots.map((n) => renderNode(n, 0)).join('');
 }
 
 // ============================================================
@@ -520,7 +606,7 @@ async function renderDashboardPage() {
   const trendBars = trendPoints
     .map((p) => {
       const pct = Math.max(4, Math.round(((Number(p.net_worth) - trendMin) / (trendMax - trendMin || 1)) * 100));
-      return `<div style="height:${pct}%" title="${p.occurred_on}: ${maskNetWorthYen(p.net_worth)}"></div>`;
+      return `<div style="height:${pct}%" title="${p.occurred_on}: ${yen(p.net_worth)}"></div>`;
     })
     .join('');
 
@@ -573,19 +659,16 @@ async function renderDashboardPage() {
 
       <div class="grid-fit">
         <div class="card">
-          <div class="card-head">
-            <div class="stat-label">純資産</div>
-            ${netWorthHideToggleButton()}
-          </div>
-          <div class="stat-value mono">${maskNetWorthYen(netWorth.net_worth)}</div>
+          <div class="stat-label">純資産</div>
+          <div class="stat-value mono">${yen(netWorth.net_worth)}</div>
         </div>
         <div class="card">
           <div class="stat-label">今月の支出</div>
-          <div class="stat-value mono neg">${maskNetWorthYen(monthlyFlow.spend)}</div>
+          <div class="stat-value mono neg">${yen(monthlyFlow.spend)}</div>
         </div>
         <div class="card">
           <div class="stat-label">今月の収入</div>
-          <div class="stat-value mono pos">${maskNetWorthYen(monthlyFlow.income)}</div>
+          <div class="stat-value mono pos">${yen(monthlyFlow.income)}</div>
         </div>
       </div>
 
@@ -683,7 +766,10 @@ async function renderRecordPage() {
     <div class="breadcrumb"><a href="#" data-nav="dashboard">ダッシュボード</a><span>/</span><span>記録</span></div>
     <div class="grid-fit-320">
       <section class="card">
-        <h1>記録</h1>
+        <div class="card-head">
+          <h1>記録</h1>
+          <button type="button" class="btn" style="width:auto;" data-nav="manage">ノードを追加</button>
+        </div>
         <p style="margin:2px 0 20px;font-size:12.5px;color:var(--muted);">お金の出どころと行き先を選んで金額を入れます。</p>
         <div class="stack" style="gap:18px;">
           <label class="field">出どころ
@@ -918,15 +1004,17 @@ function renderSparkline(points, color, width = 100, height = 28) {
   </svg>`;
 }
 
-const nodeRow = (balanceByNodeId, n, indent = 0) => `
+const nodeRow = (balanceByNodeId, n, indent = 0, canArchive = false, hasChildren = false) => `
   <div class="row clickable" data-id="${n.id}" data-name="${esc(n.name)}" style="padding-left:${indent}px;">
+    ${treeToggleCell(n.id, hasChildren)}
     <span class="${indent ? 'indent-name' : ''}" style="flex:1;">${esc(n.name)}</span>
     <span class="mono">${maskNodeYen(n.id, balanceByNodeId.get(n.id))}</span>
     ${nodeHideToggleButton(n.id)}
+    ${canArchive ? nodeArchiveButton(n.id) : ''}
   </div>
 `;
 
-function nodeCard(n, balanceByNodeId, { showPath = false, maxAbs = 1, sparkline = null } = {}) {
+function nodeCard(n, balanceByNodeId, { showPath = false, maxAbs = 1, sparkline = null, canArchive = false } = {}) {
   const balance = Number(balanceByNodeId.get(n.id) ?? 0);
   const parentPath = showPath && n.path.includes(' > ') ? n.path.slice(0, n.path.lastIndexOf(' > ')) : '';
   const type = NODE_TYPE_META[n.node_type];
@@ -935,7 +1023,10 @@ function nodeCard(n, balanceByNodeId, { showPath = false, maxAbs = 1, sparkline 
     <div class="node-card clickable" data-id="${n.id}" data-name="${esc(n.name)}" style="border-left-color:${type.color};">
       <div style="display:flex;align-items:center;justify-content:space-between;">
         <span class="badge" style="color:${type.color};">${type.label}</span>
-        ${nodeHideToggleButton(n.id)}
+        <span style="display:flex;">
+          ${nodeHideToggleButton(n.id)}
+          ${canArchive ? nodeArchiveButton(n.id) : ''}
+        </span>
       </div>
       ${parentPath ? `<span class="path">${esc(parentPath)}</span>` : ''}
       <span class="name">${esc(n.name)}</span>
@@ -946,9 +1037,39 @@ function nodeCard(n, balanceByNodeId, { showPath = false, maxAbs = 1, sparkline 
   `;
 }
 
+// Only a leaf node (no children) is safe to archive from here: hiding an
+// intermediate node would orphan its children from the flow tree render.
+function archivedRow(n) {
+  return `
+    <div class="row">
+      <span style="flex:1;color:var(--faint);">${esc(n.name)}</span>
+      <span style="font-size:11px;color:var(--faint);letter-spacing:0.03em;">${n.node_type}</span>
+      <button type="button" class="btn-sm" data-node-unarchive-id="${n.id}">復元</button>
+    </div>
+  `;
+}
+
 async function renderNodesPage() {
-  const [nodes, balances] = await Promise.all([listNodesWithPaths(supabase), getRollupBalances(supabase)]);
+  const [allNodesRaw, balances] = await Promise.all([
+    listNodesWithPaths(supabase, { includeArchived: true }),
+    getRollupBalances(supabase)
+  ]);
   const balanceByNodeId = new Map(balances.map((b) => [b.node_id, b.balance]));
+  const nodes = allNodesRaw.filter((n) => !n.is_archived);
+  const archivedNodesList = allNodesRaw.filter((n) => n.is_archived);
+
+  // Archiving is only offered for leaf nodes: hiding an intermediate node
+  // would orphan its children from the flow tree / section it belongs to.
+  const nonLeafIds = new Set(nodes.filter((n) => n.parent_id).map((n) => n.parent_id));
+  const canArchive = (n) => !nonLeafIds.has(n.id);
+
+  const archivedSection = showArchivedNodes ? `
+    <section class="card">
+      <h3>アーカイブ済み</h3>
+      <p class="card-note">一覧・集計・入力候補には出てきません。記録は残っています。</p>
+      ${archivedNodesList.map(archivedRow).join('') || '<p style="font-size:12.5px;color:var(--faint);">アーカイブ済みのノードはありません</p>'}
+    </section>
+  ` : '';
 
   const viewToggle = `
     <div class="view-toggle">
@@ -965,11 +1086,11 @@ async function renderNodesPage() {
           <h1>ノード一覧</h1>
           <p style="margin:2px 0 0;font-size:12.5px;color:var(--muted);">${note}</p>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          ${netWorthHideToggleButton()}
-          ${viewToggle}
-          <button class="btn-primary" style="width:auto;" data-nav="manage">ノードを作成</button>
-        </div>
+        <button class="btn-primary" style="width:auto;" data-nav="manage">ノードを作成</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button type="button" id="toggle-archived-btn" class="btn">${showArchivedNodes ? 'アーカイブ済みを隠す' : 'アーカイブ済みを表示'}</button>
+        ${viewToggle}
       </div>
   `;
 
@@ -987,13 +1108,15 @@ async function renderNodesPage() {
       .map((n) => nodeCard(n, balanceByNodeId, {
         showPath: n.node_type === 'flow',
         maxAbs,
-        sparkline: sparklineByNodeId.get(n.id)
+        sparkline: sparklineByNodeId.get(n.id),
+        canArchive: canArchive(n)
       }))
       .join('');
 
     return `
       ${pageHead('残高の推移(折れ線)・大きさ順に並んでいます。色は資産/負債/収支。')}
         <div class="node-card-grid">${cardsHtml || '<p style="font-size:12.5px;color:var(--faint);">ノードがありません</p>'}</div>
+        ${archivedSection}
       </div>
     `;
   }
@@ -1001,20 +1124,20 @@ async function renderNodesPage() {
   const byType = { asset: [], liability: [], flow: [] };
   nodes.forEach((n) => byType[n.node_type].push(n));
 
-  const flatSection = (label, note, list, totalColor = '') => {
-    // Sum only roots: a rollup balance already includes its whole subtree,
-    // so summing every node in `list` would double/triple-count any node
-    // that has children within the same section (e.g. 立て替え > 友人A).
-    const total = list
-      .filter((n) => !n.parent_id)
-      .reduce((sum, n) => sum + Number(balanceByNodeId.get(n.id) ?? 0), 0);
-    const sorted = [...list].sort((a, b) => a.name.localeCompare(b.name));
-    const rows = sorted.map((n) => nodeRow(balanceByNodeId, n)).join('');
+  // A single tree renderer for all three sections: a node's row shows its
+  // own rollup total, and its children are hidden until expanded. That's
+  // what keeps a parent's rollup and its descendants' individual amounts
+  // from both sitting in the section at once looking like unrelated,
+  // overlapping numbers (e.g. 立て替え and 立て替え > 友人A).
+  const hierarchySection = (label, note, list, totalColor = '') => {
+    const roots = list.filter((n) => !n.parent_id).sort((a, b) => a.name.localeCompare(b.name));
+    const total = roots.reduce((sum, n) => sum + Number(balanceByNodeId.get(n.id) ?? 0), 0);
+    const rows = renderNodeTree(list, (n, depth, hasChildren) => nodeRow(balanceByNodeId, n, depth * 16, canArchive(n), hasChildren));
     return `
       <section class="card">
         <div class="card-head">
           <h3>${label}</h3>
-          <span class="mono" style="font-size:12.5px;${totalColor}">${maskNetWorthYen(total)}</span>
+          <span class="mono" style="font-size:12.5px;${totalColor}">${yen(total)}</span>
         </div>
         <p class="card-note">${note}</p>
         ${rows || '<p style="font-size:12.5px;color:var(--faint);">ノードがありません</p>'}
@@ -1022,49 +1145,25 @@ async function renderNodesPage() {
     `;
   };
 
-  const childrenByParent = new Map();
-  byType.flow.forEach((n) => {
-    const key = n.parent_id ?? 'root';
-    if (!childrenByParent.has(key)) childrenByParent.set(key, []);
-    childrenByParent.get(key).push(n);
-  });
-
-  const renderFlowNode = (n, depth = 0) => {
-    const children = (childrenByParent.get(n.id) ?? []).sort((a, b) => a.name.localeCompare(b.name));
-    const row = nodeRow(balanceByNodeId, n, depth * 16);
-    return row + children.map((c) => renderFlowNode(c, depth + 1)).join('');
-  };
-
-  const flowRoots = (childrenByParent.get('root') ?? []).sort((a, b) => a.name.localeCompare(b.name));
-  // Same reasoning as flatSection: sum roots only, not every flow node.
-  const flowTotal = flowRoots.reduce((sum, n) => sum + Number(balanceByNodeId.get(n.id) ?? 0), 0);
-  const flowItemsHtml = flowRoots.map((n) => renderFlowNode(n)).join('');
-
   const spendingDestinations = computeSpendingDestinations(nodes, balanceByNodeId);
   const spendTotal = spendingDestinations.reduce((sum, n) => sum + Number(balanceByNodeId.get(n.id)), 0);
-  const spendRows = spendingDestinations.map((n) => nodeRow(balanceByNodeId, n)).join('');
+  const spendRows = spendingDestinations.map((n) => nodeRow(balanceByNodeId, n, 0, canArchive(n))).join('');
 
   return `
-    ${pageHead('資産・負債は現在残高、支出・収入は子孫を含む累計です。')}
+    ${pageHead('資産・負債は現在残高、支出・収入は子孫を含む累計です。子を持つ行は▸で展開できます。')}
       <div class="grid-fit-300">
-        ${flatSection('資産', '財布・銀行・電子マネーなど', byType.asset)}
-        ${flatSection('負債', '未払いのクレジット残など', byType.liability, 'color:var(--negative);')}
+        ${hierarchySection('資産', '財布・銀行・電子マネーなど', byType.asset)}
+        ${hierarchySection('負債', '未払いのクレジット残など', byType.liability, 'color:var(--negative);')}
         <section class="card">
           <div class="card-head">
             <h3>消費相手（多い順）</h3>
-            <span class="mono" style="font-size:12.5px;color:var(--negative);">${maskNetWorthYen(spendTotal)}</span>
+            <span class="mono" style="font-size:12.5px;color:var(--negative);">${yen(spendTotal)}</span>
           </div>
           <p class="card-note">flow の葉ノード・残高が正のもの</p>
           ${spendRows || '<p style="font-size:12.5px;color:var(--faint);">記録がありません</p>'}
         </section>
-        <section class="card">
-          <div class="card-head">
-            <h3>支出・収入（階層）</h3>
-            <span class="mono" style="font-size:12.5px;">${maskNetWorthYen(flowTotal)}</span>
-          </div>
-          <p class="card-note">子孫を含む累計</p>
-          ${flowItemsHtml || '<p style="font-size:12.5px;color:var(--faint);">ノードがありません</p>'}
-        </section>
+        ${hierarchySection('支出・収入（階層）', '子孫を含む累計', byType.flow)}
+        ${archivedSection}
       </div>
     </div>
   `;
@@ -1082,6 +1181,25 @@ function wireNodesPage() {
     nodeViewMode = 'card';
     localStorage.setItem('kakeibo:nodeViewMode', nodeViewMode);
     render();
+  });
+
+  document.getElementById('toggle-archived-btn').addEventListener('click', () => {
+    showArchivedNodes = !showArchivedNodes;
+    render();
+  });
+
+  root.querySelectorAll('[data-node-archive-id]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleArchiveNode(btn.dataset.nodeArchiveId);
+    });
+  });
+
+  root.querySelectorAll('[data-node-unarchive-id]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleUnarchiveNode(btn.dataset.nodeUnarchiveId);
+    });
   });
 
   root.querySelectorAll('.row.clickable, .node-card.clickable').forEach((el) => {
@@ -1169,12 +1287,26 @@ function wireDetailPage() {
 async function renderManagePage() {
   const nodes = await loadAllNodesWithPaths();
   const pending = state.pendingPromote ?? null;
+  const editNode = state.editNode ?? null;
 
+  // A node can't become its own parent, and can't move under its own
+  // descendant either (the DB blocks the cycle anyway, but filtering it out
+  // of the picker up front is clearer than surfacing a DB error for it).
+  const excludedIds = editNode
+    ? new Set(nodes.filter((n) => n.id === editNode.id || n.path.startsWith(`${editNode.path} > `)).map((n) => n.id))
+    : new Set();
+
+  const selectedParentId = pending?.parentId ?? (editNode ? (editNode.parent_id ?? '') : '');
   const parentOptions = ['<option value="">なし（ルートノード）</option>']
-    .concat(nodes.map((n) => `<option value="${n.id}" ${pending?.parentId === n.id ? 'selected' : ''}>${esc(n.path)}</option>`))
+    .concat(
+      nodes
+        .filter((n) => !excludedIds.has(n.id))
+        .map((n) => `<option value="${n.id}" ${selectedParentId === n.id ? 'selected' : ''}>${esc(n.path)}</option>`)
+    )
     .join('');
 
   const parentNode = pending ? nodesById.get(pending.parentId) : null;
+  const selectedNodeType = pending ? parentNode?.node_type : editNode?.node_type;
 
   const confirmBox = pending ? `
     <div class="confirm-box">
@@ -1183,43 +1315,44 @@ async function renderManagePage() {
         「${esc(parentNode?.name ?? '')}」には既に記録があります。既存の記録を「その他（${esc(parentNode?.name ?? '')}）」へ移して階層化しますか？
       </p>
       <div style="display:flex;gap:8px;">
-        <button id="confirm-promote-btn" class="btn" style="background:var(--text);color:#fff;border:none;">移して作成</button>
+        <button id="confirm-promote-btn" class="btn" style="background:var(--text);color:#fff;border:none;">${pending.action === 'move' ? '移して更新' : '移して作成'}</button>
         <button id="cancel-promote-btn" class="btn">やめる</button>
       </div>
     </div>
   ` : '';
 
-  const treeRows = nodes
-    .slice()
-    .sort((a, b) => a.path.localeCompare(b.path))
-    .map((n) => {
-      const depth = n.path.split(' > ').length - 1;
-      return `
-        <div class="row">
-          <span style="padding-left:${depth * 16}px;${depth ? 'color:var(--muted);' : ''}">${esc(n.name)}</span>
-          <span style="font-size:11px;color:var(--faint);letter-spacing:0.03em;">${n.node_type}</span>
-        </div>
-      `;
-    })
-    .join('');
+  // Collapsible so a large hierarchy doesn't turn this into a long scroll of
+  // rows - each node folds its descendants away until its ▸ is expanded.
+  const treeRows = renderNodeTree(nodes, (n, depth, hasChildren) => `
+    <div class="row">
+      ${treeToggleCell(n.id, hasChildren)}
+      <span style="padding-left:${depth * 16}px;${depth ? 'color:var(--muted);' : ''}flex:1;">${esc(n.name)}</span>
+      <span style="font-size:11px;color:var(--faint);letter-spacing:0.03em;">${n.node_type}</span>
+      <button type="button" class="btn-sm tree-edit-btn" data-id="${n.id}">編集</button>
+      <button type="button" class="btn-sm danger tree-delete-btn" data-id="${n.id}">削除</button>
+    </div>
+  `);
 
   return `
     <div class="breadcrumb"><a href="#" data-nav="nodes">ノード一覧</a><span>/</span><span>ノード管理</span></div>
     <div class="grid-fit-320">
       <section class="card">
-        <h1>ノード管理</h1>
-        <p style="margin:2px 0 20px;font-size:12.5px;color:var(--muted);">資産・負債・支出先を作成し、階層に組み込みます。</p>
+        <h1>${editNode ? `ノードを編集：${esc(editNode.name)}` : 'ノード管理'}</h1>
+        <p style="margin:2px 0 20px;font-size:12.5px;color:var(--muted);">${editNode ? '名前と親ノード（＝一覧上の位置）を変更できます。種別は変更できません。' : '資産・負債・支出先を作成し、階層に組み込みます。'}</p>
         <div class="stack" style="gap:16px;">
           <label class="field">親ノード<select id="node-parent-select">${parentOptions}</select></label>
           <label class="field">種別
-            <select id="node-type-select">
-              <option value="flow" ${(pending ? parentNode?.node_type : null) === 'flow' || !pending ? 'selected' : ''}>flow（支出・収入先）</option>
-              <option value="asset" ${parentNode?.node_type === 'asset' ? 'selected' : ''}>asset（資産）</option>
-              <option value="liability" ${parentNode?.node_type === 'liability' ? 'selected' : ''}>liability（負債）</option>
+            <select id="node-type-select" ${editNode ? 'disabled' : ''}>
+              <option value="flow" ${selectedNodeType === 'flow' || !pending && !editNode ? 'selected' : ''}>flow（支出・収入先）</option>
+              <option value="asset" ${selectedNodeType === 'asset' ? 'selected' : ''}>asset（資産）</option>
+              <option value="liability" ${selectedNodeType === 'liability' ? 'selected' : ''}>liability（負債）</option>
             </select>
           </label>
-          <label class="field">ノード名<input id="node-name" type="text" placeholder="例: マクドナルド" value="${esc(pending?.name ?? '')}"></label>
-          <button id="node-create-btn" class="btn-primary">ノードを作成</button>
+          <label class="field">ノード名<input id="node-name" type="text" placeholder="例: マクドナルド" value="${esc(pending?.name ?? editNode?.name ?? '')}"></label>
+          <div style="display:flex;gap:8px;">
+            <button id="node-create-btn" class="btn-primary" style="flex:1;">${editNode ? '更新' : 'ノードを作成'}</button>
+            <button id="cancel-node-edit-btn" type="button" class="btn" style="${editNode ? '' : 'display:none;'}">キャンセル</button>
+          </div>
           <p id="node-create-error" style="color:var(--negative);font-size:12px;margin:0;"></p>
         </div>
         ${confirmBox}
@@ -1227,7 +1360,7 @@ async function renderManagePage() {
 
       <section class="card">
         <h2>既存の階層</h2>
-        <p style="margin:2px 0 10px;font-size:12px;color:var(--muted);">一覧です（並べ替えは未対応）。</p>
+        <p style="margin:2px 0 10px;font-size:12px;color:var(--muted);">▸で子ノードを展開できます。編集で名前・位置を変更、削除で関連する取引ごと削除します。</p>
         <div id="tree-rows">${treeRows}</div>
       </section>
     </div>
@@ -1236,6 +1369,7 @@ async function renderManagePage() {
 
 function wireManagePage() {
   document.getElementById('node-parent-select').addEventListener('change', (e) => {
+    if (state.editNode) return; // type stays locked while editing, regardless of parent
     const typeSelect = document.getElementById('node-type-select');
     const parent = nodesById.get(e.target.value);
     if (parent) {
@@ -1258,13 +1392,20 @@ function wireManagePage() {
       return;
     }
 
-    const { data: { user } } = await supabase.auth.getUser();
+    const editNode = state.editNode;
 
     try {
-      await createNode(supabase, { userId: user.id, name, parentId, nodeType });
+      if (editNode) {
+        await updateNode(supabase, editNode.id, { name, parentId });
+      } else {
+        const { data: { user } } = await supabase.auth.getUser();
+        await createNode(supabase, { userId: user.id, name, parentId, nodeType });
+      }
     } catch (error) {
       if (parentId && error.message.includes('promote_to_parent')) {
-        state.pendingPromote = { parentId, nodeType, name };
+        state.pendingPromote = editNode
+          ? { action: 'move', nodeId: editNode.id, parentId, name }
+          : { action: 'create', parentId, nodeType, name };
         render();
         return;
       }
@@ -1273,6 +1414,7 @@ function wireManagePage() {
     }
 
     state.pendingPromote = null;
+    state.editNode = null;
     render();
   });
 
@@ -1280,15 +1422,20 @@ function wireManagePage() {
   if (confirmBtn) {
     confirmBtn.addEventListener('click', async () => {
       const pending = state.pendingPromote;
-      const { data: { user } } = await supabase.auth.getUser();
       try {
         await promoteToParent(supabase, pending.parentId);
-        await createNode(supabase, { userId: user.id, name: pending.name, parentId: pending.parentId, nodeType: pending.nodeType });
+        if (pending.action === 'move') {
+          await updateNode(supabase, pending.nodeId, { name: pending.name, parentId: pending.parentId });
+        } else {
+          const { data: { user } } = await supabase.auth.getUser();
+          await createNode(supabase, { userId: user.id, name: pending.name, parentId: pending.parentId, nodeType: pending.nodeType });
+        }
       } catch (error) {
         document.getElementById('node-create-error').textContent = error.message;
         return;
       }
       state.pendingPromote = null;
+      state.editNode = null;
       render();
     });
   }
@@ -1300,6 +1447,28 @@ function wireManagePage() {
       render();
     });
   }
+
+  const cancelEditBtn = document.getElementById('cancel-node-edit-btn');
+  if (cancelEditBtn) {
+    cancelEditBtn.addEventListener('click', () => {
+      state.editNode = null;
+      state.pendingPromote = null;
+      render();
+    });
+  }
+
+  root.querySelectorAll('.tree-edit-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.editNode = nodesById.get(btn.dataset.id);
+      state.pendingPromote = null;
+      render();
+      window.scrollTo(0, 0);
+    });
+  });
+
+  root.querySelectorAll('.tree-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', () => handleDeleteNode(btn.dataset.id));
+  });
 }
 
 // ============================================================
@@ -1432,13 +1601,16 @@ async function render() {
 
   root.innerHTML = `<div class="app-shell">${renderHeader()}<main>${pageHtml}</main></div>`;
   wireHeader();
-  root.querySelectorAll('[data-action="toggle-net-worth-hide"]').forEach((btn) => {
-    btn.addEventListener('click', toggleNetWorthHidden);
-  });
   root.querySelectorAll('[data-node-hide-id]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       toggleNodeHidden(btn.dataset.nodeHideId);
+    });
+  });
+  root.querySelectorAll('[data-tree-toggle-id]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleNodeExpanded(btn.dataset.treeToggleId);
     });
   });
   await wire();

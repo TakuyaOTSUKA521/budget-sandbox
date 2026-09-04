@@ -39,6 +39,21 @@ export async function deleteLine(supabase, lineId) {
     return data;
 }
 
+// Supersedes every active line touching `nodeId`, on either side of the
+// transaction - a transaction always connects two nodes, so removing it
+// affects both ledgers, not just the one the node deletion started from.
+export async function deleteLinesForNode(supabase, nodeId) {
+    const { data, error } = await supabase
+        .from('lines')
+        .update({ superseded_at: new Date().toISOString() })
+        .or(`from_node.eq.${nodeId},to_node.eq.${nodeId}`)
+        .is('superseded_at', null)
+        .select('id');
+
+    if (error) throw error;
+    return data.length;
+}
+
 // Supersedes `lineId` and inserts a new line with the given fields merged
 // over the original, linked back via `version_of`. `patch.memo` (if given)
 // is plaintext and gets encrypted; leaving it out keeps the original's

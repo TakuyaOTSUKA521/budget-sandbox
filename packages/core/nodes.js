@@ -1,10 +1,31 @@
 // Node CRUD, hierarchy operations, search and input suggestions.
 // Table/column names (`nodes`, `parent_id`, `node_type`, ...) only appear here.
 
+import { deleteLinesForNode } from './lines.js';
+
 export async function createNode(supabase, { userId, name, parentId = null, nodeType, currency = 'JPY' }) {
     const { data, error } = await supabase
         .from('nodes')
         .insert({ user_id: userId, name, parent_id: parentId, node_type: nodeType, currency })
+        .select()
+        .single();
+
+    if (error) throw error;
+    return data;
+}
+
+// Renames and/or reparents a node. `nodeType` isn't editable here - changing
+// it interacts with the parent/children node_type triggers in ways too easy
+// to get wrong from a simple form, so a type change stays a DB-side-only move.
+export async function updateNode(supabase, nodeId, { name, parentId } = {}) {
+    const patch = {};
+    if (name !== undefined) patch.name = name;
+    if (parentId !== undefined) patch.parent_id = parentId;
+
+    const { data, error } = await supabase
+        .from('nodes')
+        .update(patch)
+        .eq('id', nodeId)
         .select()
         .single();
 
@@ -31,6 +52,58 @@ export async function archiveNode(supabase, nodeId) {
 
     if (error) throw error;
     return data;
+}
+
+export async function unarchiveNode(supabase, nodeId) {
+    const { data, error } = await supabase
+        .from('nodes')
+        .update({ is_archived: false })
+        .eq('id', nodeId)
+        .select()
+        .single();
+
+    if (error) throw error;
+    return data;
+}
+
+export async function hasChildren(supabase, nodeId) {
+    const { count, error } = await supabase
+        .from('nodes')
+        .select('id', { count: 'exact', head: true })
+        .eq('parent_id', nodeId);
+
+    if (error) throw error;
+    return (count ?? 0) > 0;
+}
+
+async function removeNode(supabase, nodeId) {
+    const { error } = await supabase.from('nodes').delete().eq('id', nodeId);
+    if (error) throw error;
+}
+
+// Deletes a node: first supersedes every line touching it (never a physical
+// line delete - see lines.js), then removes the node row itself.
+//
+// A node that was ever used in a transaction still has a row in `lines`
+// after superseding (only `superseded_at` changed), and `lines.from_node` /
+// `to_node` are `on delete restrict` - so the DB will refuse to physically
+// remove it. In that case we fall back to archiving: same result for the
+// user (gone from every list/picker/suggestion), full history preserved.
+export async function deleteNode(supabase, nodeId) {
+    if (await hasChildren(supabase, nodeId)) {
+        throw new Error('子ノードがあるため削除できません。先に子ノードを削除するか、移動してください。');
+    }
+
+    await deleteLinesForNode(supabase, nodeId);
+
+    try {
+        await removeNode(supabase, nodeId);
+        return { removed: true, archived: false };
+    } catch (error) {
+        if (error.code !== '23503') throw error; // not a foreign-key-restrict failure
+        await archiveNode(supabase, nodeId);
+        return { removed: false, archived: true };
+    }
 }
 
 // Leaf nodes (no children) are the only valid `lines` endpoints; used to build
