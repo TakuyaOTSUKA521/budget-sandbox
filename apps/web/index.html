@@ -151,17 +151,17 @@
 <div id="root"></div>
 
 <script type="module">
-import { createSupabaseClient } from '../../packages/core/client.js';
+import { createSupabaseClient } from './packages/core/client.js';
 import {
   getLeafNodes, getNodeSuggestions, searchNodes, createNode, promoteToParent,
   listNodesWithPaths, listNodes, getDescendantIds
-} from '../../packages/core/nodes.js';
-import { recordLine, reviseLine, deleteLine } from '../../packages/core/lines.js';
+} from './packages/core/nodes.js';
+import { recordLine, reviseLine, deleteLine } from './packages/core/lines.js';
 import {
   listLines, getNetWorth, getRollupBalances, getCumulative, getLinesForNodes,
   getNetWorthDaily, getMonthlyFlow
-} from '../../packages/core/reports.js';
-import { importMemoKey } from '../../packages/core/crypto.js';
+} from './packages/core/reports.js';
+import { importMemoKey } from './packages/core/crypto.js';
 
 const supabase = createSupabaseClient(
   'https://sicucuywqqcapbogfkoy.supabase.co',
