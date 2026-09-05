@@ -3,10 +3,10 @@
 
 import { deleteLinesForNode } from './lines.js';
 
-export async function createNode(supabase, { userId, name, parentId = null, nodeType, currency = 'JPY' }) {
+export async function createNode(supabase, { userId, name, parentId = null, nodeType, currency = 'JPY', excludeFromFlowTotals = false }) {
     const { data, error } = await supabase
         .from('nodes')
-        .insert({ user_id: userId, name, parent_id: parentId, node_type: nodeType, currency })
+        .insert({ user_id: userId, name, parent_id: parentId, node_type: nodeType, currency, exclude_from_flow_totals: excludeFromFlowTotals })
         .select()
         .single();
 
@@ -17,10 +17,11 @@ export async function createNode(supabase, { userId, name, parentId = null, node
 // Renames and/or reparents a node. `nodeType` isn't editable here - changing
 // it interacts with the parent/children node_type triggers in ways too easy
 // to get wrong from a simple form, so a type change stays a DB-side-only move.
-export async function updateNode(supabase, nodeId, { name, parentId } = {}) {
+export async function updateNode(supabase, nodeId, { name, parentId, excludeFromFlowTotals } = {}) {
     const patch = {};
     if (name !== undefined) patch.name = name;
     if (parentId !== undefined) patch.parent_id = parentId;
+    if (excludeFromFlowTotals !== undefined) patch.exclude_from_flow_totals = excludeFromFlowTotals;
 
     const { data, error } = await supabase
         .from('nodes')

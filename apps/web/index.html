@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Budget Sandbox</title>
 
+<!-- Local-dev-server fallback (frame-ancestors is ignored in a meta tag - the
+     real enforcement, and the rest of these directives, are also sent as an
+     HTTP header by vercel.json for the deployed site). script-src/style-src
+     need 'unsafe-inline' because this app's whole UI is one inline <script
+     type="module"> with per-render inline style="" attributes - everything
+     else is scoped to only the origins this app actually talks to. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://sicucuywqqcapbogfkoy.supabase.co https://esm.sh; object-src 'none'; base-uri 'self'; form-action 'self'; manifest-src 'self'">
+
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#0f6b5c">
 <link rel="icon" href="./icons/favicon-32.png" type="image/png">
@@ -17,7 +25,7 @@
 <script type="importmap">
 {
   "imports": {
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.112.4"
   }
 }
 </script>
@@ -116,6 +124,7 @@
     background: transparent; border: none; cursor: pointer; opacity: .55;
   }
   .node-hide-btn:hover { opacity: 1; }
+  .chart-swatch { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; }
   .tree-toggle-btn, .tree-toggle-spacer { width: 16px; flex: 0 0 auto; }
   .tree-toggle-btn {
     padding: 0; margin: 0; font-size: 10px; line-height: 1; text-align: center;
@@ -180,7 +189,7 @@ import {
 } from './packages/core/nodes.js';
 import { recordLine, reviseLine, deleteLine } from './packages/core/lines.js';
 import {
-  listLines, getNetWorth, getRollupBalances, getCumulative, getLinesForNodes,
+  listLines, getNetWorth, getRollupBalances, getCumulative, getCumulativeForNodes, getLinesForNodes,
   getNetWorthDaily, getMonthlyFlow, getDailyDeltas
 } from './packages/core/reports.js';
 import { importMemoKey } from './packages/core/crypto.js';
@@ -202,6 +211,9 @@ let state = { page: 'login', detailNodeId: null };
 let chartMode = localStorage.getItem('kakeibo:chartMode') || 'cumulative';
 let nodeViewMode = localStorage.getItem('kakeibo:nodeViewMode') || 'list';
 let hiddenNodeIds = new Set(JSON.parse(localStorage.getItem('kakeibo:hiddenNodeIds') || '[]'));
+// Independent of per-node hiding: masks only the 純資産 stat on the
+// dashboard, so a total can be hidden without hiding any individual node.
+let netWorthHidden = localStorage.getItem('kakeibo:netWorthHidden') === '1';
 let showArchivedNodes = false;
 // Which parent nodes are expanded in a collapsible hierarchy view (node
 // list's 資産/負債/支出・収入 sections, node management's tree). Starts empty
@@ -247,6 +259,16 @@ function toggleNodeHidden(nodeId) {
   if (hiddenNodeIds.has(nodeId)) hiddenNodeIds.delete(nodeId);
   else hiddenNodeIds.add(nodeId);
   localStorage.setItem('kakeibo:hiddenNodeIds', JSON.stringify([...hiddenNodeIds]));
+  render();
+}
+
+function netWorthToggleButton() {
+  return `<button type="button" id="net-worth-hide-btn" class="node-hide-btn" title="${netWorthHidden ? '純資産を表示' : '純資産を非表示'}">${netWorthHidden ? '🙈' : '🐵'}</button>`;
+}
+
+function toggleNetWorthHidden() {
+  netWorthHidden = !netWorthHidden;
+  localStorage.setItem('kakeibo:netWorthHidden', netWorthHidden ? '1' : '0');
   render();
 }
 
@@ -337,6 +359,22 @@ function go(page, extra = {}) {
   state = { page, ...extra };
   render();
   window.scrollTo(0, 0);
+}
+
+// On a shared device, a second person could reopen this same browser tab
+// after a logout without a full page reload - these module-level caches
+// (decrypted memo, amounts, balance history included) would otherwise still
+// sit in memory even though the UI has moved back to the login page.
+async function handleLogout() {
+  await supabase.auth.signOut();
+  session = null;
+  nodesById = new Map();
+  linesById = new Map();
+  chartData = [];
+  txListRows = [];
+  txListOffset = 0;
+  txListDone = false;
+  go('login');
 }
 
 const NODE_TYPE_META = {
@@ -529,6 +567,7 @@ function renderHeader() {
         </button>
         <div class="header-right">
           <span>${esc(session?.user?.email ?? '')}</span>
+          <button class="btn" data-nav="analysis">構成比</button>
           <button class="btn" data-nav="settings">設定</button>
           <button class="btn" id="logout-btn">ログアウト</button>
         </div>
@@ -543,11 +582,7 @@ function wireHeader() {
   });
   const logoutBtn = document.getElementById('logout-btn');
   if (logoutBtn) {
-    logoutBtn.addEventListener('click', async () => {
-      await supabase.auth.signOut();
-      session = null;
-      go('login');
-    });
+    logoutBtn.addEventListener('click', handleLogout);
   }
 }
 
@@ -659,8 +694,8 @@ async function renderDashboardPage() {
 
       <div class="grid-fit">
         <div class="card">
-          <div class="stat-label">純資産</div>
-          <div class="stat-value mono">${yen(netWorth.net_worth)}</div>
+          <div class="stat-label" style="display:flex;align-items:center;justify-content:space-between;">純資産${netWorthToggleButton()}</div>
+          <div class="stat-value mono">${netWorthHidden ? '••••••' : yen(netWorth.net_worth)}</div>
         </div>
         <div class="card">
           <div class="stat-label">今月の支出</div>
@@ -715,6 +750,138 @@ function wireDashboard() {
   attachTxRowActions(root);
   document.getElementById('spend-period-select').addEventListener('change', (e) => {
     state.spendPeriod = e.target.value;
+    render();
+  });
+  document.getElementById('net-worth-hide-btn').addEventListener('click', toggleNetWorthHidden);
+}
+
+// ============================================================
+// 構成比
+// ============================================================
+
+const CHART_COLORS = ['#0f6b5c', '#2f6f9e', '#b08968', '#7d5ba6', '#b03a2e', '#4d8076', '#c9a227', '#5c6bc0'];
+
+// No chart library - one <path> arc per entry, share of `total` in radians,
+// drawn as a ring (outer radius r, punched out down to holeR). A lone
+// 100%-share entry is clamped just under a full turn so the arc command
+// still gets two distinct endpoints to draw between.
+function renderDonutChart(entries, total, size = 132) {
+  if (!total) return '';
+  const r = size / 2;
+  const holeR = r * 0.6;
+  const cx = r, cy = r;
+  const point = (radius, angle) => [cx + radius * Math.cos(angle), cy + radius * Math.sin(angle)];
+
+  let angle = -Math.PI / 2;
+  const paths = entries.map((e, i) => {
+    const sweep = Math.min((e.amount / total) * Math.PI * 2, Math.PI * 2 - 0.001);
+    const start = angle;
+    const end = angle + sweep;
+    angle = end;
+    const large = sweep > Math.PI ? 1 : 0;
+    const [x1, y1] = point(r, start);
+    const [x2, y2] = point(r, end);
+    const [ix2, iy2] = point(holeR, end);
+    const [ix1, iy1] = point(holeR, start);
+    const d = `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} L ${ix2} ${iy2} A ${holeR} ${holeR} 0 ${large} 0 ${ix1} ${iy1} Z`;
+    return `<path d="${d}" fill="${CHART_COLORS[i % CHART_COLORS.length]}"></path>`;
+  }).join('');
+
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="flex:0 0 auto;">${paths}</svg>`;
+}
+
+// One 支出/収入/資産/負債 breakdown card: entries already carry a positive
+// `amount`; this only turns them into a donut + legend. No aggregation here -
+// `amount` was summed from view rows by the caller (see renderAnalysisPage).
+function compositionSection(title, entries) {
+  const total = entries.reduce((sum, e) => sum + e.amount, 0);
+  if (!entries.length) {
+    return `<section class="card"><h2 style="margin-bottom:4px;">${title}</h2><p style="font-size:13px;color:var(--faint);margin-top:8px;">記録がありません</p></section>`;
+  }
+
+  const legendRows = entries.map((e, i) => {
+    const pct = total ? (e.amount / total) * 100 : 0;
+    return `
+      <div class="row">
+        <span class="chart-swatch" style="background:${CHART_COLORS[i % CHART_COLORS.length]};"></span>
+        <span style="flex:1;min-width:0;">${esc(e.node.name)}</span>
+        <span class="mono" style="min-width:74px;text-align:right;">${maskNodeYen(e.node.id, e.amount)}</span>
+        <span style="min-width:46px;text-align:right;font-size:11.5px;color:var(--muted);">${pct.toFixed(1)}%</span>
+        ${nodeHideToggleButton(e.node.id)}
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <section class="card">
+      <h2 style="margin-bottom:4px;">${title}</h2>
+      <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:10px;">
+        ${renderDonutChart(entries, total)}
+        <div style="flex:1;min-width:200px;">${legendRows}</div>
+      </div>
+    </section>
+  `;
+}
+
+async function renderAnalysisPage() {
+  const nodes = await loadAllNodesWithPaths();
+  const rootFlowNodes = nodes.filter((n) => n.node_type === 'flow' && !n.parent_id && !n.exclude_from_flow_totals);
+  const rootAssetNodes = nodes.filter((n) => n.node_type === 'asset' && !n.parent_id);
+  const rootLiabilityNodes = nodes.filter((n) => n.node_type === 'liability' && !n.parent_id);
+
+  const period = state.analysisPeriod ?? 'month';
+  const { from, to } = periodRange(period);
+
+  const [flowRows, balances] = await Promise.all([
+    getCumulativeForNodes(supabase, rootFlowNodes.map((n) => n.id), { from, to }),
+    getRollupBalances(supabase)
+  ]);
+
+  const deltaByNodeId = new Map();
+  flowRows.forEach((r) => deltaByNodeId.set(r.node_id, (deltaByNodeId.get(r.node_id) ?? 0) + Number(r.daily_delta)));
+  const balanceByNodeId = new Map(balances.map((b) => [b.node_id, Number(b.balance)]));
+
+  const spendEntries = rootFlowNodes
+    .map((n) => ({ node: n, amount: deltaByNodeId.get(n.id) ?? 0 }))
+    .filter((e) => e.amount > 0)
+    .sort((a, b) => b.amount - a.amount);
+  const incomeEntries = rootFlowNodes
+    .map((n) => ({ node: n, amount: -(deltaByNodeId.get(n.id) ?? 0) }))
+    .filter((e) => e.amount > 0)
+    .sort((a, b) => b.amount - a.amount);
+  const assetEntries = rootAssetNodes
+    .map((n) => ({ node: n, amount: balanceByNodeId.get(n.id) ?? 0 }))
+    .filter((e) => e.amount > 0)
+    .sort((a, b) => b.amount - a.amount);
+  const liabilityEntries = rootLiabilityNodes
+    .map((n) => ({ node: n, amount: Math.abs(balanceByNodeId.get(n.id) ?? 0) }))
+    .filter((e) => e.amount > 0)
+    .sort((a, b) => b.amount - a.amount);
+
+  const periodSelect = `
+    <select id="analysis-period-select" style="width:auto;padding:5px 8px;font-size:11.5px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
+      ${Object.entries(SPEND_PERIODS).map(([value, label]) => `<option value="${value}" ${period === value ? 'selected' : ''}>${label}</option>`).join('')}
+    </select>
+  `;
+
+  return `
+    <div class="breadcrumb"><a href="#" data-nav="dashboard">ダッシュボード</a><span>/</span><span>構成比</span></div>
+    <div class="card-head">
+      <h1>構成比</h1>
+      ${periodSelect}
+    </div>
+    <div class="grid-fit-320" style="margin-top:12px;">
+      ${compositionSection('支出構成比', spendEntries)}
+      ${compositionSection('収入構成比', incomeEntries)}
+      ${compositionSection('純資産構成比（資産）', assetEntries)}
+      ${liabilityEntries.length ? compositionSection('純資産構成比（負債）', liabilityEntries) : ''}
+    </div>
+  `;
+}
+
+function wireAnalysisPage() {
+  document.getElementById('analysis-period-select').addEventListener('change', (e) => {
+    state.analysisPeriod = e.target.value;
     render();
   });
 }
@@ -1349,6 +1516,12 @@ async function renderManagePage() {
             </select>
           </label>
           <label class="field">ノード名<input id="node-name" type="text" placeholder="例: マクドナルド" value="${esc(pending?.name ?? editNode?.name ?? '')}"></label>
+          <label class="field" id="node-exclude-flow-field" style="${selectedNodeType === 'flow' ? '' : 'display:none;'}">
+            <span style="display:flex;align-items:center;gap:8px;font-weight:400;">
+              <input type="checkbox" id="node-exclude-flow" ${editNode?.exclude_from_flow_totals ? 'checked' : ''}>
+              収支の集計・構成比から除外する(初期残高など)
+            </span>
+          </label>
           <div style="display:flex;gap:8px;">
             <button id="node-create-btn" class="btn-primary" style="flex:1;">${editNode ? '更新' : 'ノードを作成'}</button>
             <button id="cancel-node-edit-btn" type="button" class="btn" style="${editNode ? '' : 'display:none;'}">キャンセル</button>
@@ -1368,6 +1541,11 @@ async function renderManagePage() {
 }
 
 function wireManagePage() {
+  const excludeFlowField = document.getElementById('node-exclude-flow-field');
+  const syncExcludeFlowVisibility = () => {
+    excludeFlowField.style.display = document.getElementById('node-type-select').value === 'flow' ? '' : 'none';
+  };
+
   document.getElementById('node-parent-select').addEventListener('change', (e) => {
     if (state.editNode) return; // type stays locked while editing, regardless of parent
     const typeSelect = document.getElementById('node-type-select');
@@ -1378,7 +1556,10 @@ function wireManagePage() {
     } else {
       typeSelect.disabled = false;
     }
+    syncExcludeFlowVisibility();
   });
+
+  document.getElementById('node-type-select').addEventListener('change', syncExcludeFlowVisibility);
 
   document.getElementById('node-create-btn').addEventListener('click', async () => {
     const errorEl = document.getElementById('node-create-error');
@@ -1387,6 +1568,7 @@ function wireManagePage() {
     const name = document.getElementById('node-name').value.trim();
     const parentId = document.getElementById('node-parent-select').value || null;
     const nodeType = document.getElementById('node-type-select').value;
+    const excludeFromFlowTotals = nodeType === 'flow' ? document.getElementById('node-exclude-flow').checked : false;
     if (!name) {
       errorEl.textContent = 'ノード名を入力してください';
       return;
@@ -1396,10 +1578,10 @@ function wireManagePage() {
 
     try {
       if (editNode) {
-        await updateNode(supabase, editNode.id, { name, parentId });
+        await updateNode(supabase, editNode.id, { name, parentId, excludeFromFlowTotals });
       } else {
         const { data: { user } } = await supabase.auth.getUser();
-        await createNode(supabase, { userId: user.id, name, parentId, nodeType });
+        await createNode(supabase, { userId: user.id, name, parentId, nodeType, excludeFromFlowTotals });
       }
     } catch (error) {
       if (parentId && error.message.includes('promote_to_parent')) {
@@ -1543,14 +1725,55 @@ async function wireSettingsPage() {
     localStorage.setItem('kakeibo:chartMode', chartMode);
   });
 
-  document.getElementById('csv-export-btn').addEventListener('click', () => alert('準備中: CSVの書き出しは未実装です。'));
+  document.getElementById('csv-export-btn').addEventListener('click', handleExportCsv);
   document.getElementById('csv-import-btn').addEventListener('click', () => alert('準備中: CSVの取り込みは未実装です。'));
 
-  document.getElementById('settings-logout-btn').addEventListener('click', async () => {
-    await supabase.auth.signOut();
-    session = null;
-    go('login');
-  });
+  document.getElementById('settings-logout-btn').addEventListener('click', handleLogout);
+}
+
+// Exports every active line (v_lines, all pages) as a CSV file. Encoding
+// only - no aggregation - so it stays in apps/web rather than packages/core.
+function csvEscape(value) {
+  let s = String(value ?? '');
+  // Neutralize spreadsheet formula injection: Excel/Sheets treat a field
+  // starting with = + - @ (or a leading tab/CR) as a formula to evaluate
+  // when the CSV is opened. memo and node names are free text the account
+  // owner can type anything into, so this can't be assumed safe.
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+async function handleExportCsv() {
+  const btn = document.getElementById('csv-export-btn');
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '書き出し中…';
+  try {
+    const rows = [];
+    const pageSize = 500;
+    for (let offset = 0; ; offset += pageSize) {
+      const page = await listLines(supabase, { ascending: true, limit: pageSize, offset }, memoKey);
+      rows.push(...page);
+      if (page.length < pageSize) break;
+    }
+
+    const header = ['日付', '出どころ', '行き先', '金額', 'メモ'];
+    const csv = [header, ...rows.map((l) => [l.occurred_on, l.from_name, l.to_name, l.amount, l.memo])]
+      .map((cols) => cols.map(csvEscape).join(','))
+      .join('\r\n');
+
+    const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `kakeibo_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
 }
 
 // ============================================================
@@ -1580,6 +1803,10 @@ async function render() {
     case 'nodes':
       pageHtml = await renderNodesPage();
       wire = wireNodesPage;
+      break;
+    case 'analysis':
+      pageHtml = await renderAnalysisPage();
+      wire = wireAnalysisPage;
       break;
     case 'detail':
       pageHtml = await renderDetailPage();

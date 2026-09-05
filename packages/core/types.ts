@@ -166,6 +166,7 @@ export type Database = {
         Row: {
           created_at: string
           currency: string
+          exclude_from_flow_totals: boolean
           id: string
           is_archived: boolean
           name: string
@@ -176,6 +177,7 @@ export type Database = {
         Insert: {
           created_at?: string
           currency?: string
+          exclude_from_flow_totals?: boolean
           id?: string
           is_archived?: boolean
           name: string
@@ -186,6 +188,7 @@ export type Database = {
         Update: {
           created_at?: string
           currency?: string
+          exclude_from_flow_totals?: boolean
           id?: string
           is_archived?: boolean
           name?: string

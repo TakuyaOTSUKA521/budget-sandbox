@@ -66,6 +66,23 @@ export async function getCumulative(supabase, nodeId) {
     return data;
 }
 
+// Same view as getCumulative, but for several nodes and an optional date
+// range at once - used to build a period's per-node totals (composition
+// ratio breakdowns) without writing a GROUP BY in the caller: each node's
+// `daily_delta` already includes its descendants (see v_cumulative), so the
+// caller only has to sum `daily_delta` per node_id across the returned rows.
+export async function getCumulativeForNodes(supabase, nodeIds, { from, to } = {}) {
+    if (nodeIds.length === 0) return [];
+
+    let query = supabase.from('v_cumulative').select('*').in('node_id', nodeIds);
+    if (from) query = query.gte('occurred_on', from);
+    if (to) query = query.lte('occurred_on', to);
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data;
+}
+
 export async function getNetWorth(supabase) {
     const { data, error } = await supabase.from('v_net_worth').select('*').maybeSingle();
     if (error) throw error;

@@ -53,6 +53,7 @@
 | node_type | TEXT NOT NULL | `asset` / `liability` / `flow` |
 | currency | TEXT NOT NULL DEFAULT 'JPY' | 将来のマイル・外貨用 |
 | is_archived | BOOLEAN DEFAULT false | 使わなくなったノードを隠す |
+| exclude_from_flow_totals | BOOLEAN NOT NULL DEFAULT false | 収支の集計・構成比解析から除外する(初期残高ノードなど) |
 | created_at | TIMESTAMPTZ DEFAULT now() | |
 
 **node_type の意味**
@@ -229,6 +230,12 @@ line_labels  (line_id, label_id)   PK: 複合
 | `v_node_paths` | 各ノードの表示用パス文字列(食費 > 外食 > マクドナルド) |
 | `v_rollup_balances` | 各ノードの、子孫を含めた合計 |
 
+**構成比解析(支出/収入/純資産)は新しいビューを作らない。** 既存の `v_cumulative`
+(ノード×日の、子孫込みの増減)を複数ノード・任意期間で読み、JS側は期間内の合計と
+割合(%)を出すだけに留める(GROUP BYや符号判定などの集計ロジックはビュー側のまま)。
+対象ノードはルート直下の `flow`(支出/収入の内訳)・`asset`/`liability`
+(純資産の内訳)ノードとし、`exclude_from_flow_totals` なノードは候補から外す。
+
 **符号の扱いはここで吸収する。** `from`/`to` 形式なので、
 あるノードにとってその行が増加か減少かの判定が必要になるが、
 それを書くのは `v_daily_deltas` の中だけ。以降のビューはそれを参照する。
@@ -333,6 +340,28 @@ GROUP BY t.ancestor_id;
 ```
 運用損益(flow) → PayPay運用(asset)   85
 ```
+
+### 初期残高(オープニングバランス)
+
+すでに残高がある資産・負債ノード(銀行口座、クレカ未払いなど)の利用を始めるとき、
+その残高を実際の収入・支出と区別して記録する必要がある。1取引=2ノードの制約上、
+記録には必ず相方のノードが要るため、専用の `flow` ノード(例: `初期値`)を経由させる。
+
+```
+初期値(flow) → 銀行(asset)   500,000   利用開始時点の残高
+```
+
+このノードは `exclude_from_flow_totals = true` にする。これにより
+`v_monthly_flow` など収支を集計するビューから、このノードに触れる取引が除外される。
+資産側(銀行)の残高・純資産への算入は通常どおり行われる
+(その口座は記録開始日から正しく純資産に含まれるべきなので、これは意図した挙動)。
+
+**適用条件**
+
+- 子を持たない葉ノードにのみ使う(木の途中に付けると、除外がどこまで効くか曖昧になる)
+- 1ノードにつき初期残高の記録は1回。修正が必要な場合はバージョニング(修正)で扱う
+- 収支を集計・分析するビュー(`v_monthly_flow`、構成比解析など)は必ず
+  `WHERE NOT exclude_from_flow_totals` を条件に含める。純資産系のビューには付けない
 
 ### 立て替え
 
@@ -449,7 +478,63 @@ supabase link --project-ref sicucuywqqcapbogfkoy
 
 ---
 
-## 7. 未確定・今後の課題
+## 7. セキュリティ
+
+### 前提: 唯一の防衛線は RLS
+
+すべてのテーブルで RLS を有効化し、`auth.uid() = user_id` を select/insert/update/delete
+の4種類に設定している(2. スキーマ参照)。ビューはすべて `security_invoker = true` なので、
+呼び出したユーザーの RLS がベーステーブルまで正しく効く。トリガー関数・
+`promote_to_parent()` はすべて `security definer` ではなく `security invoker` で実装し、
+呼び出し元の権限のまま実行する(RLS をバイパスする特権昇格を作らない)。
+
+**アプリケーション側(`packages/core`/`apps/*`)はこれを信頼して書ける。**
+クライアントが `user_id` を偽って他人のデータを読み書きしようとしても、
+RLS が拒否する。ここが崩れると全データが他人から見える状態になるため、
+新しいテーブル・ビューを追加するたびに RLS と `security_invoker` を必ず確認する。
+
+### memo 暗号化の脅威モデル(限定的)
+
+`packages/core/crypto.js` は `memo` を AES-GCM で暗号化してから保存する。
+**これが守るのは「Supabase ダッシュボード(Table Editor/SQL Editor)から平文の
+memo を読まれること」だけ**であり、下記は守らない。
+
+- 暗号鍵はアプリのソース(`apps/web/index.html`)に埋め込まれた固定の公開値。
+  ユーザーごとの鍵ではない
+- RLS が破られた場合や、`service_role` キーが漏れた場合には無力
+- 「本人のブラウザで本人の memo を暗号化している」だけなので、
+  本人が読めることと保護は矛盾しない(本人はアプリ経由で平文を見られて当然)
+
+暗号化を過信して、memo に本来 RLS だけで守るべきではない機密情報
+(パスワードなど)を書かない。
+
+### CSP・レスポンスヘッダ
+
+`vercel.json` の `headers` でデプロイ先に Content-Security-Policy・
+X-Frame-Options・Referrer-Policy 等を送っている。`apps/web/index.html` の
+`<meta http-equiv="Content-Security-Policy">` はローカル開発サーバー用の
+フォールバック(frame-ancestors はメタタグ経由では効かないため
+`vercel.json` 側が正)。
+
+`script-src`/`style-src` は `'unsafe-inline'` を含む。UI 全体が1つの
+インラインスクリプトで、要素ごとに動的な `style=""` を使う設計上の制約による。
+将来スクリプトを別ファイルに分離すれば `script-src` から `'unsafe-inline'` を
+外せるが、`packages/core` は CLI(Node, ベア指定子を node_modules 解決)と
+Web(importmap 解決)の両方から使われるため、importmap 自体は残る。
+
+### Supabase 側で確認すること(コードでは直せない)
+
+- **新規サインアップの許可**: Web アプリにサインアップ画面はないが、
+  匿名(publishable)キーとプロジェクト URL は公開情報なので、
+  誰でも Supabase Auth の signUp API を直接叩ける。RLS があるため
+  他人のデータは見えないが、単一ユーザー想定なら
+  Dashboard → Authentication で新規サインアップを無効化しておく
+- **メール確認・レート制限**: Supabase Auth 標準機能に依存。
+  公開運用する場合は Dashboard 側の設定を確認する
+
+---
+
+## 8. 未確定・今後の課題
 
 - **入力コストの実測**: 1日あたりの取引件数、ノードの実際の種類数、入力所要時間。
   実際に1ヶ月使うまで分からない。手入力だけで継続可能か確認してから
