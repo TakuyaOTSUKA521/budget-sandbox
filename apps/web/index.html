@@ -115,7 +115,7 @@
   .stack { display: flex; flex-direction: column; gap: 20px; }
 
   .field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--label); }
-  .field input, .field select {
+  .field input:not([type="checkbox"]):not([type="radio"]), .field select {
     padding: 10px 12px; font-size: 14px; border: 1px solid var(--input-border); border-radius: 8px; background: var(--input-bg); color: var(--text); width: 100%;
   }
   .field input:focus, .field select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
@@ -172,6 +172,9 @@
   }
   .node-hide-btn:hover { opacity: 1; }
   .chart-swatch { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; }
+  .donut-slice { cursor: default; transition: opacity .1s ease; }
+  .donut-slice:hover { opacity: 0.75; }
+  .tx-type-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
   .tree-toggle-btn, .tree-toggle-spacer { width: 16px; flex: 0 0 auto; }
   .tree-toggle-btn {
     padding: 0; margin: 0; font-size: 10px; line-height: 1; text-align: center;
@@ -291,6 +294,13 @@ let txListRows = [];
 let txListOffset = 0;
 let txListDone = false;
 const TX_PAGE_SIZE = 20;
+// Lives outside `state` (like chartMode/recordSlot) so it stays in sync with
+// txListRows/txListOffset across a go() navigation - state.txSearch resets on
+// every visit safely because it only filters already-fetched rows, but the
+// period actually decides which rows got fetched, so resetting it without
+// also invalidating the cache would leave the selector and the list
+// disagreeing about what's shown.
+let txPeriod = 'all';
 
 function esc(str) {
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -461,6 +471,7 @@ async function handleLogout() {
   txListRows = [];
   txListOffset = 0;
   txListDone = false;
+  txPeriod = 'all';
   go('login');
 }
 
@@ -875,7 +886,9 @@ const CHART_COLORS = ['#2f7fa8', '#a95742', '#6d7fa3', '#c9974a', '#4d8f8a', '#7
 // No chart library - one <path> arc per entry, share of `total` in radians,
 // drawn as a ring (outer radius r, punched out down to holeR). A lone
 // 100%-share entry is clamped just under a full turn so the arc command
-// still gets two distinct endpoints to draw between.
+// still gets two distinct endpoints to draw between. Each slice carries a
+// native <title> (same pattern as the bar charts) so hovering it shows the
+// node's masked amount and its share of `total`.
 function renderDonutChart(entries, total, size = 132) {
   if (!total) return '';
   const r = size / 2;
@@ -895,7 +908,9 @@ function renderDonutChart(entries, total, size = 132) {
     const [ix2, iy2] = point(holeR, end);
     const [ix1, iy1] = point(holeR, start);
     const d = `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} L ${ix2} ${iy2} A ${holeR} ${holeR} 0 ${large} 0 ${ix1} ${iy1} Z`;
-    return `<path d="${d}" fill="${CHART_COLORS[i % CHART_COLORS.length]}"></path>`;
+    const pct = (e.amount / total) * 100;
+    const tooltip = `${esc(e.node.name)}: ${maskNodeYen(e.node.id, e.amount)} (${pct.toFixed(1)}%)`;
+    return `<path class="donut-slice" d="${d}" fill="${CHART_COLORS[i % CHART_COLORS.length]}"><title>${tooltip}</title></path>`;
   }).join('');
 
   return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="flex:0 0 auto;">${paths}</svg>`;
@@ -904,11 +919,26 @@ function renderDonutChart(entries, total, size = 132) {
 // One 支出/収入/資産/負債 breakdown card: entries already carry a positive
 // `amount`; this only turns them into a donut + legend. No aggregation here -
 // `amount` was summed from view rows by the caller (see renderAnalysisPage).
-function compositionSection(title, entries) {
+// `subtitle` states this section's display rule (period-scoped vs. current
+// balance) right under its heading - see DESIGN.md's 構成比解析 note on why
+// asset/liability totals don't move with the period selector.
+function compositionSection(title, entries, subtitle = '') {
   const total = entries.reduce((sum, e) => sum + e.amount, 0);
   if (!entries.length) {
-    return `<section class="card"><h2 style="margin-bottom:4px;">${title}</h2><p style="font-size:13px;color:var(--faint);margin-top:8px;">記録がありません</p></section>`;
+    return `
+      <section class="card">
+        <h2 style="margin-bottom:4px;">${title}</h2>
+        ${subtitle ? `<p class="card-note" style="margin-top:0;">${subtitle}</p>` : ''}
+        <p style="font-size:13px;color:var(--faint);margin-top:8px;">記録がありません</p>
+      </section>
+    `;
   }
+
+  // A hidden node's amount would otherwise leak through total − visible
+  // entries, so the total masks along with it (same rule the legend rows
+  // already follow via maskNodeYen/nodeHideToggleButton).
+  const anyHidden = entries.some((e) => isNodeHidden(e.node.id));
+  const totalLabel = anyHidden ? '••••••' : yen(total);
 
   const legendRows = entries.map((e, i) => {
     const pct = total ? (e.amount / total) * 100 : 0;
@@ -925,7 +955,13 @@ function compositionSection(title, entries) {
 
   return `
     <section class="card">
-      <h2 style="margin-bottom:4px;">${title}</h2>
+      <div class="card-head">
+        <div>
+          <h2 style="margin-bottom:4px;">${title}</h2>
+          ${subtitle ? `<p class="card-note" style="margin:0;">${subtitle}</p>` : ''}
+        </div>
+        <span class="mono" style="font-size:20px;font-weight:700;">${totalLabel}</span>
+      </div>
       <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:10px;">
         ${renderDonutChart(entries, total)}
         <div style="flex:1;min-width:200px;">${legendRows}</div>
@@ -981,11 +1017,15 @@ async function renderAnalysisPage() {
       <h1>構成比</h1>
       ${periodSelect}
     </div>
+    <p style="margin:6px 0 0;font-size:11.5px;color:var(--faint);line-height:1.7;">
+      対象はルート直下の支出・収入・資産・負債ノードのみ(子ノードの内訳は合算)。「収支の集計から除外」設定のノード(初期残高など)は含みません。
+      円グラフにカーソルを合わせると、そのノードの金額と割合を表示します。
+    </p>
     <div class="grid-fit-320" style="margin-top:12px;">
-      ${compositionSection('支出構成比', spendEntries)}
-      ${compositionSection('収入構成比', incomeEntries)}
-      ${compositionSection('純資産構成比（資産）', assetEntries)}
-      ${liabilityEntries.length ? compositionSection('純資産構成比（負債）', liabilityEntries) : ''}
+      ${compositionSection('支出構成比', spendEntries, `${SPEND_PERIODS[period]}の増減`)}
+      ${compositionSection('収入構成比', incomeEntries, `${SPEND_PERIODS[period]}の増減`)}
+      ${compositionSection('純資産構成比（資産）', assetEntries, '現在の残高(期間指定の影響を受けません)')}
+      ${liabilityEntries.length ? compositionSection('純資産構成比（負債）', liabilityEntries, '現在の残高(期間指定の影響を受けません)') : ''}
     </div>
   `;
 }
@@ -1223,7 +1263,8 @@ async function fetchTxPage(reset) {
     txListOffset = 0;
     txListDone = false;
   }
-  const page = await listLines(supabase, { ascending: false, limit: TX_PAGE_SIZE, offset: txListOffset }, memoKey);
+  const { from, to } = periodRange(txPeriod);
+  const page = await listLines(supabase, { ascending: false, limit: TX_PAGE_SIZE, offset: txListOffset, from, to }, memoKey);
   txListRows = txListRows.concat(page);
   txListOffset += page.length;
   if (page.length < TX_PAGE_SIZE) txListDone = true;
@@ -1237,43 +1278,86 @@ function filterTxRows(rows, search) {
     (l.memo ?? '').toLowerCase().includes(search));
 }
 
+// 支出/収入/振替 の3分類のみ(DESIGN.md 4.仕訳パターン参照)。asset/liability間の
+// 振替・立て替え返済も、flow↔flow(給与の控除など、どちらの端点も口座を
+// 動かさない行)も、細分化すると煩雑になるだけなので一括で「振替」に含める。
+// 参照するノードがアーカイブ済みで nodesById に無い場合も同じ扱いになる。
+const TX_CLASS_META = {
+  spend: { label: '支出', color: 'var(--negative)' },
+  income: { label: '収入', color: 'var(--accent)' },
+  transfer: { label: '振替', color: 'var(--secondary)' }
+};
+
+function isNetWorthType(nodeType) {
+  return nodeType === 'asset' || nodeType === 'liability';
+}
+
+function classifyLine(l) {
+  const fromType = nodesById.get(l.from_node)?.node_type;
+  const toType = nodesById.get(l.to_node)?.node_type;
+  if (isNetWorthType(fromType) && toType === 'flow') return 'spend';
+  if (fromType === 'flow' && isNetWorthType(toType)) return 'income';
+  return 'transfer';
+}
+
 function buildTxRows(rows) {
   rows.forEach((l) => linesById.set(l.id, l));
   return rows
-    .map((l) => `
+    .map((l) => {
+      const meta = TX_CLASS_META[classifyLine(l)];
+      return `
       <div class="tx-table-row">
-        <span class="mono" style="color:var(--muted);font-size:12.5px;">${l.occurred_on}</span>
+        <span class="mono" style="color:var(--muted);font-size:12.5px;"><span class="tx-type-dot" style="background:${meta.color};" title="${meta.label}"></span>${l.occurred_on}</span>
         <span>${esc(l.from_name)}</span>
         <span>${esc(l.to_name)}</span>
         <span style="font-size:12.5px;color:var(--faint);">${esc(l.memo ?? '')}</span>
-        <span class="mono" style="text-align:right;">${yen(l.amount)}</span>
+        <span class="mono" style="text-align:right;color:${meta.color};">${yen(l.amount)}</span>
         <span style="display:flex;gap:4px;justify-content:flex-end;">
           <button type="button" class="btn-sm tx-edit" data-id="${l.id}">編集</button>
           <button type="button" class="btn-sm danger tx-delete" data-id="${l.id}">削除</button>
         </span>
       </div>
-    `)
+    `;
+    })
     .join('') || '<p style="padding:16px 0;font-size:13px;color:var(--faint);">該当する記録がありません</p>';
 }
 
-function renderTxListPage() {
+async function renderTxListPage() {
+  // Node types (from/to) drive the 支出/収入/振替 classification below - not
+  // needed for anything else on this page, but loadAllNodesWithPaths also
+  // (re)populates the nodesById cache other pages already rely on.
+  await loadAllNodesWithPaths();
+
+  const period = txPeriod;
   const search = (state.txSearch ?? '').trim().toLowerCase();
   const filtered = filterTxRows(txListRows, search);
   const total = txListRows.length;
+
+  const periodSelect = `
+    <select id="tx-period-select" style="width:auto;padding:5px 8px;font-size:11.5px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
+      ${Object.entries(SPEND_PERIODS).map(([value, label]) => `<option value="${value}" ${period === value ? 'selected' : ''}>${label}</option>`).join('')}
+    </select>
+  `;
 
   return `
     <section class="card">
       <div class="card-head">
         <div>
           <h1>取引一覧</h1>
-          <p style="margin:2px 0 0;font-size:12.5px;color:var(--muted);">読み込み済み ${total} 件</p>
+          <p style="margin:2px 0 0;font-size:12.5px;color:var(--muted);">読み込み済み ${total} 件・${SPEND_PERIODS[period]}</p>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          ${periodSelect}
           <input id="tx-search" type="text" placeholder="メモ・ノードで検索" value="${esc(state.txSearch ?? '')}" style="padding:8px 11px;font-size:13px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);min-width:180px;">
         </div>
       </div>
+      <div class="legend" style="margin-top:8px;">
+        <span><span class="swatch" style="background:var(--negative);"></span>支出</span>
+        <span><span class="swatch" style="background:var(--accent);"></span>収入</span>
+        <span><span class="swatch" style="background:var(--secondary);"></span>振替</span>
+      </div>
 
-      <div style="margin-top:16px;">
+      <div style="margin-top:12px;">
         <div class="tx-table-head">
           <span>日付</span><span>出どころ</span><span>行き先</span><span>メモ</span><span style="text-align:right;">金額</span><span></span>
         </div>
@@ -1292,6 +1376,12 @@ function wireTxList() {
   document.getElementById('tx-search').addEventListener('input', (e) => {
     state.txSearch = e.target.value;
     renderTxRowsInPlace();
+  });
+
+  document.getElementById('tx-period-select').addEventListener('change', async (e) => {
+    txPeriod = e.target.value;
+    invalidateTxCache();
+    await render();
   });
 
   const loadMoreBtn = document.getElementById('load-more-btn');
@@ -1688,9 +1778,9 @@ async function renderManagerModal() {
           </label>
           <label class="field">ノード名<input id="node-name" type="text" placeholder="例: マクドナルド" value="${esc(pending?.name ?? editNode?.name ?? '')}"></label>
           <label class="field" id="node-exclude-flow-field" style="${selectedNodeType === 'flow' ? '' : 'display:none;'}">
-            <span style="display:flex;align-items:center;gap:8px;font-weight:400;">
-              <input type="checkbox" id="node-exclude-flow" ${editNode?.exclude_from_flow_totals ? 'checked' : ''}>
-              収支の集計・構成比から除外する(初期残高など)
+            <span style="display:flex;align-items:flex-start;gap:8px;font-weight:400;">
+              <input type="checkbox" id="node-exclude-flow" style="flex:0 0 auto;margin-top:3px;" ${editNode?.exclude_from_flow_totals ? 'checked' : ''}>
+              <span style="flex:1;">収支の集計・構成比から除外する(初期残高など)</span>
             </span>
           </label>
           <div style="display:flex;gap:8px;">
@@ -1972,7 +2062,7 @@ async function render() {
       break;
     case 'tx':
       if (txListRows.length === 0) await fetchTxPage(true);
-      pageHtml = renderTxListPage();
+      pageHtml = await renderTxListPage();
       wire = wireTxList;
       break;
     case 'nodes':

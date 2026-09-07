@@ -7,8 +7,10 @@ async function withDecryptedMemo(rows, memoKey) {
     return Promise.all(rows.map(async (row) => ({ ...row, memo: await decryptMemo(memoKey, row.memo) })));
 }
 
-export async function listLines(supabase, { ascending = true, limit, offset = 0 } = {}, memoKey) {
+export async function listLines(supabase, { ascending = true, limit, offset = 0, from, to } = {}, memoKey) {
     let query = supabase.from('v_lines').select('*').order('occurred_on', { ascending }).order('recorded_at', { ascending });
+    if (from) query = query.gte('occurred_on', from);
+    if (to) query = query.lte('occurred_on', to);
     if (limit) query = query.range(offset, offset + limit - 1);
 
     const { data, error } = await query;
