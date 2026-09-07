@@ -14,7 +14,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://sicucuywqqcapbogfkoy.supabase.co https://esm.sh; object-src 'none'; base-uri 'self'; form-action 'self'; manifest-src 'self'">
 
 <link rel="manifest" href="./manifest.webmanifest">
-<meta name="theme-color" content="#0f6b5c">
+<meta name="theme-color" content="#2f7fa8">
 <link rel="icon" href="./icons/favicon-32.png" type="image/png">
 <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -30,26 +30,41 @@
 }
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Shippori+Mincho:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
+  /* 夏 (Natsu) theme: soft summer-sky gradient + white cloud/wave silhouettes,
+     mincho serif headings. Pulled from .web-ui-ref/Budget Sandbox - Natsu.html
+     (株式会社コモレビ style reference) - fonts and palette follow that file. */
   :root {
-    --bg: #f4f4f1;
-    --card: #ffffff;
-    --card-border: #e4e4de;
-    --text: #18181b;
-    --muted: #86867d;
-    --faint: #a0a098;
-    --label: #57574f;
-    --input-bg: #fcfcfa;
-    --input-border: #dcdcd5;
-    --accent: #0f6b5c;
-    --accent-hover: #0a4f44;
-    --negative: #b03a2e;
-    --secondary: #2f6f9e;
-    --row-border: #f0f0ea;
+    --bg: #dceaf3;
+    --card: #fbfdfe;
+    --card-border: #cddde9;
+    --text: #1e3346;
+    --muted: #617888;
+    --faint: #8fa4b3;
+    --label: #3f5568;
+    --input-bg: #f4fafd;
+    --input-border: #cbdae6;
+    --accent: #2f7fa8;
+    --accent-hover: #1f5f80;
+    --negative: #a95742;
+    --negative-border: #dfc7bd;
+    --secondary: #6d7fa3;
+    --row-border: #e2edf4;
+    --divider: #d9e6ef;
+    --highlight-bg: #eef5fa;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); font-family: "Noto Sans JP", sans-serif; color: var(--text); -webkit-font-smoothing: antialiased; }
+  body {
+    margin: 0; background: var(--bg);
+    background-image:
+      radial-gradient(70% 42% at 24% 78%, rgba(255,255,255,0.95), rgba(255,255,255,0) 72%),
+      radial-gradient(52% 34% at 62% 96%, rgba(255,255,255,0.88), rgba(255,255,255,0) 70%),
+      radial-gradient(46% 30% at 88% 84%, rgba(214,229,240,0.9), rgba(214,229,240,0) 72%),
+      linear-gradient(180deg, #bfd8ea 0%, #dceaf3 46%, #eef5fa 100%);
+    background-attachment: fixed;
+    font-family: "Noto Sans JP", sans-serif; color: var(--text); -webkit-font-smoothing: antialiased;
+  }
   .mono { font-family: "IBM Plex Mono", monospace; }
   a { color: var(--accent); text-decoration: none; }
   a:hover { color: var(--accent-hover); text-decoration: underline; }
@@ -57,17 +72,38 @@
 
   .app-shell { min-height: 100vh; display: flex; flex-direction: column; }
   header { background: var(--card); border-bottom: 1px solid var(--card-border); position: sticky; top: 0; z-index: 5; }
-  .header-inner { max-width: 1080px; margin: 0 auto; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .header-inner { max-width: 1080px; margin: 0 auto; padding: 13px 20px 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
   .logo-btn { display: flex; align-items: baseline; gap: 10px; background: transparent; border: none; padding: 0; cursor: pointer; text-align: left; }
-  .logo-text { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
+  .logo-text { font-size: 28px; font-weight: 700; letter-spacing: -0.01em; font-style: italic; color: var(--text); }
   .logo-sub { font-size: 12px; color: var(--muted); }
-  .header-right { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+  .header-right { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--muted); }
+  .header-link { background: transparent; border: none; padding: 4px 2px; font-size: 12.5px; color: var(--label); cursor: pointer; text-decoration: underline; text-decoration-color: var(--input-border); text-underline-offset: 3px; }
 
-  main { flex: 1; max-width: 1080px; width: 100%; margin: 0 auto; padding: 24px 20px 64px; }
+  .nav-tabs { max-width: 1080px; margin: 0 auto; padding: 0 20px; display: flex; gap: 4px; }
+  .nav-tab {
+    padding: 12px 14px 11px; margin: 0 0 -1px; font-size: 13.5px; font-weight: 400;
+    color: var(--muted); background: transparent; border: none; border-bottom: 2px solid transparent; cursor: pointer;
+  }
+  .nav-tab.active { font-weight: 700; color: var(--text); border-bottom-color: var(--accent); }
 
-  h1 { margin: 0; font-size: 16px; font-weight: 700; }
-  h2 { margin: 0; font-size: 13px; font-weight: 700; }
-  h3 { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; color: var(--label); }
+  main { position: relative; z-index: 1; flex: 1; max-width: 1080px; width: 100%; margin: 0 auto; padding: 24px 20px 64px; }
+
+  h1, h2, h3 { font-family: "Shippori Mincho", serif; font-weight: 600; letter-spacing: 0.02em; }
+  p { font-family: "Shippori Mincho", serif; font-weight: 400; letter-spacing: 0.01em; line-height: 1.75; }
+  h1 { margin: 0; font-size: 16px; }
+  h2 { margin: 0; font-size: 13px; }
+  h3 { margin: 0; font-size: 12px; letter-spacing: 0.04em; color: var(--label); }
+
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(24,24,27,0.32); z-index: 20; }
+  .modal-panel {
+    position: fixed; z-index: 21; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: min(560px, calc(100% - 32px)); max-height: 86vh; background: var(--card);
+    border: 1px solid var(--card-border); border-radius: 14px; box-shadow: 0 24px 60px rgba(24,24,27,0.22);
+    display: flex; flex-direction: column;
+  }
+  .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 22px; border-bottom: 1px solid var(--card-border); }
+  .modal-close-btn { background: transparent; border: none; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; padding: 2px 4px; }
+  .modal-body { overflow-y: auto; padding: 20px 22px 24px; display: flex; flex-direction: column; gap: 22px; }
 
   .card { background: var(--card); border: 1px solid var(--card-border); border-radius: 12px; padding: 18px 20px; }
   .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -84,22 +120,33 @@
   }
   .field input:focus, .field select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 
-  .btn { padding: 10px 14px; font-size: 13px; background: #fff; color: #4b4b45; border: 1px solid var(--input-border); border-radius: 8px; cursor: pointer; }
-  .btn-primary { padding: 12px; font-size: 14px; font-weight: 500; background: var(--text); color: #fff; border: none; border-radius: 8px; cursor: pointer; }
-  .btn-danger-outline { background: #fff; color: var(--negative); border: 1px solid #e3c9c4; border-radius: 8px; cursor: pointer; padding: 9px 14px; font-size: 13px; }
-  .btn-sm { padding: 4px 8px; font-size: 11.5px; background: #fff; border: 1px solid var(--input-border); border-radius: 6px; color: #4b4b45; cursor: pointer; }
+  .btn { padding: 10px 14px; font-size: 13px; background: var(--card); color: var(--label); border: 1px solid var(--input-border); border-radius: 8px; cursor: pointer; }
+  .btn-primary { padding: 12px; font-size: 14px; font-weight: 500; background: var(--text); color: var(--card); border: none; border-radius: 8px; cursor: pointer; }
+  .btn-danger-outline { background: var(--card); color: var(--negative); border: 1px solid var(--negative-border); border-radius: 8px; cursor: pointer; padding: 9px 14px; font-size: 13px; }
+  .btn-sm { padding: 4px 8px; font-size: 11.5px; background: var(--card); border: 1px solid var(--input-border); border-radius: 6px; color: var(--label); cursor: pointer; }
   .btn-sm.danger { color: var(--negative); }
 
   .breadcrumb { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); margin-bottom: 12px; }
+  .back-link { align-self: flex-start; display: block; background: transparent; border: none; padding: 0; margin-bottom: 12px; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+  .back-link:hover { color: var(--label); }
 
-  .chip { padding: 6px 11px; font-size: 12.5px; border-radius: 999px; cursor: pointer; border: 1px solid var(--input-border); background: #fff; color: #4b4b45; }
-  .chip.selected { background: var(--text); color: #fff; border-color: var(--text); }
+  .chip { padding: 6px 11px; font-size: 12.5px; border-radius: 999px; cursor: pointer; border: 1px solid var(--input-border); background: var(--card); color: var(--label); }
+  .chip.selected { background: var(--text); color: var(--card); border-color: var(--text); }
   .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
 
+  .slot-row { display: grid; grid-template-columns: 1fr 26px 1fr; align-items: stretch; gap: 0; }
+  .slot-btn { display: flex; flex-direction: column; gap: 5px; align-items: flex-start; padding: 11px 13px; text-align: left; cursor: pointer; background: var(--card); border: 1px solid var(--input-border); border-radius: 10px; }
+  .slot-btn.active { background: var(--input-bg); border-color: var(--accent); box-shadow: 0 0 0 3px rgba(47,127,168,0.14); }
+  .slot-label { font-size: 11px; letter-spacing: 0.04em; color: var(--muted); }
+  .slot-value { font-size: 15px; font-weight: 500; color: var(--text); }
+  .slot-arrow { display: flex; align-items: center; justify-content: center; font-size: 15px; color: var(--faint); }
+  .candidate-box { border: 1px solid var(--input-border); border-radius: 10px; background: var(--input-bg); padding: 12px 13px; display: flex; flex-direction: column; gap: 9px; }
+  .candidate-box input[type="text"] { padding: 8px 11px; font-size: 13px; border: 1px solid var(--input-border); border-radius: 8px; background: var(--card); width: 100%; }
+
   .search-results { border: 1px solid var(--row-border); border-radius: 8px; overflow: hidden; max-height: 180px; overflow-y: auto; }
-  .search-results div { padding: 9px 12px; font-size: 13px; color: #4b4b45; border-bottom: 1px solid #f2f2ec; cursor: pointer; }
+  .search-results div { padding: 9px 12px; font-size: 13px; color: var(--label); border-bottom: 1px solid var(--row-border); cursor: pointer; }
   .search-results div:last-child { border-bottom: none; }
-  .search-results div:hover { background: #f7f7f2; }
+  .search-results div:hover { background: var(--bg); }
 
   .row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--row-border); font-size: 13.5px; }
   .row:last-child { border-bottom: none; }
@@ -118,7 +165,7 @@
 
   .view-toggle { display: inline-flex; gap: 2px; padding: 3px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 999px; }
   .view-toggle .btn { border: none; background: transparent; padding: 6px 14px; border-radius: 999px; color: var(--muted); }
-  .view-toggle .btn.selected { background: var(--text); color: #fff; }
+  .view-toggle .btn.selected { background: var(--text); color: var(--card); }
   .node-hide-btn {
     width: auto; flex: 0 0 auto; padding: 2px 4px; margin: 0; font-size: 13px; line-height: 1;
     background: transparent; border: none; cursor: pointer; opacity: .55;
@@ -136,30 +183,30 @@
     padding: 12px 14px; cursor: pointer; display: flex; flex-direction: column; gap: 4px;
     transition: transform .05s ease;
   }
-  .node-card:hover { background: #f7f7f2; }
+  .node-card:hover { background: var(--bg); }
   .node-card:active { transform: scale(0.98); }
   .node-card .badge { font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; }
   .node-card .path { font-size: 10.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .node-card .name { font-size: 13px; font-weight: 500; }
   .node-card .balance { font-size: 16px; font-weight: 700; }
-  .node-card .mini-bar-track { height: 4px; background: #eeeee6; border-radius: 2px; overflow: hidden; margin-top: 2px; }
+  .node-card .mini-bar-track { height: 4px; background: var(--row-border); border-radius: 2px; overflow: hidden; margin-top: 2px; }
   .node-card .mini-bar-fill { display: block; height: 4px; }
   .node-card .sparkline { display: block; margin: 2px 0; }
 
-  .bar-chart-axis { display: flex; align-items: stretch; gap: 2px; height: 80px; padding: 0 2px; overflow-x: auto; background: #fff; border: 1px solid #eee; border-radius: 8px; }
+  .bar-chart-axis { display: flex; align-items: stretch; gap: 2px; height: 80px; padding: 0 2px; overflow-x: auto; background: var(--card); border: 1px solid var(--card-border); border-radius: 8px; }
   .y-axis-labels { display: flex; flex-direction: column; justify-content: space-between; height: 80px; font-size: 10px; color: var(--faint); text-align: right; flex: 0 0 auto; width: 56px; }
   .bar-col { display: flex; flex-direction: column; flex: 0 0 auto; width: 6px; }
-  .bar-col .bar-top { height: 40px; display: flex; align-items: flex-end; border-bottom: 1px solid #ddd; }
+  .bar-col .bar-top { height: 40px; display: flex; align-items: flex-end; border-bottom: 1px solid var(--divider); }
   .bar-col .bar-bottom { height: 40px; display: flex; align-items: flex-start; }
   .bar-col .bar { width: 100%; border-radius: 1px; }
   .bar-col .bar.pos-bar { background: var(--accent); }
   .bar-col .bar.neg-bar { background: var(--secondary); }
 
-  .trend-bars { display: flex; align-items: flex-end; gap: 3px; height: 132px; margin-top: 16px; padding-top: 4px; border-bottom: 1px solid #e9e9e3; }
+  .trend-bars { display: flex; align-items: flex-end; gap: 3px; height: 132px; margin-top: 16px; padding-top: 4px; border-bottom: 1px solid var(--divider); }
   .trend-bars > div { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; min-width: 3px; }
   .trend-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--faint); margin-top: 6px; }
 
-  .progress-track { flex: 1; height: 6px; background: #f0f0ea; border-radius: 3px; overflow: hidden; }
+  .progress-track { flex: 1; height: 6px; background: var(--row-border); border-radius: 3px; overflow: hidden; }
   .progress-fill { display: block; height: 6px; background: var(--text); }
 
   .chart-toggle { display: flex; gap: 6px; margin: 8px 0 2px; }
@@ -169,7 +216,7 @@
   .tx-table-head { display: grid; grid-template-columns: 92px 1fr 1fr 1fr 110px 96px; gap: 12px; padding: 0 0 8px; font-size: 11px; color: var(--faint); letter-spacing: 0.04em; border-bottom: 1px solid var(--card-border); }
   .tx-table-row { display: grid; grid-template-columns: 92px 1fr 1fr 1fr 110px 96px; gap: 12px; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--row-border); font-size: 13.5px; }
 
-  .confirm-box { margin-top: 22px; border: 1px solid #e8e4d8; background: #fbf9f1; border-radius: 10px; padding: 14px 16px; }
+  .confirm-box { margin-top: 22px; border: 1px solid var(--input-border); background: var(--highlight-bg); border-radius: 10px; padding: 14px 16px; }
 
   @media (max-width: 640px) {
     .tx-table-head, .tx-table-row { grid-template-columns: 72px 1fr 1fr; }
@@ -220,7 +267,23 @@ let showArchivedNodes = false;
 // so every tree opens collapsed to just its top level (DESIGN.md UX方針).
 let expandedNodeIds = new Set();
 let selectedToNode = null;
+// 記録: which of the two slots (出どころ/行き先) the shared candidate picker
+// is currently showing, and the chosen 出どころ. selectedFromNode
+// intentionally persists across a successful submit (unlike selectedToNode)
+// - see the comment in wireRecord's add-btn handler.
+let recordSlot = 'to';
+let selectedFromNode = null;
 let editingLineId = null;
+// Where 設定/構成比 (neither part of the nav-tab row) should return to when
+// closed - the page that was active right before navigating to them.
+let prevPage = 'record';
+// ノード管理 modal: state lives outside `state` on purpose. `go()` fully
+// replaces `state`, which would otherwise blow away whatever page it's
+// layered on top of (記録 or ノード一覧) the moment the modal opened.
+let managerOpen = false;
+let managerFrom = '記録';
+let managerEditNode = null;
+let managerPendingPromote = null;
 let nodesById = new Map();
 let linesById = new Map();
 let chartData = [];
@@ -306,7 +369,7 @@ async function handleDeleteNode(nodeId) {
     return;
   }
 
-  if (state.editNode?.id === nodeId) state.editNode = null;
+  if (managerEditNode?.id === nodeId) managerEditNode = null;
   invalidateTxCache();
   await render();
 
@@ -356,9 +419,33 @@ function go(page, extra = {}) {
   // Fully replace state (not merge) so leftover transient state from a
   // previous visit - an in-progress edit, a pending hierarchy confirmation,
   // a search query - doesn't leak into an unrelated later visit to the page.
+  prevPage = state.page;
   state = { page, ...extra };
   render();
   window.scrollTo(0, 0);
+}
+
+// 戻る for 設定/構成比 (see prevPage above) - falls back to 記録 in the one
+// edge case where prevPage itself is settings (can't happen via normal nav,
+// but a stale value shouldn't be able to bounce someone between two
+// non-tab pages with no way out).
+function goBack() {
+  go(prevPage === 'settings' || prevPage === 'analysis' ? 'record' : prevPage);
+}
+
+function openManager() {
+  managerOpen = true;
+  managerFrom = state.page === 'nodes' ? 'ノード一覧' : '記録';
+  managerEditNode = null;
+  managerPendingPromote = null;
+  render();
+}
+
+function closeManager() {
+  managerOpen = false;
+  managerEditNode = null;
+  managerPendingPromote = null;
+  render();
 }
 
 // On a shared device, a second person could reopen this same browser tab
@@ -557,7 +644,35 @@ function renderBarChartAxis(points, valueKey, maxAbs, hidden) {
 // Header + page shell
 // ============================================================
 
+// Fixed decorative layer behind the app shell: soft white cloud/wave
+// silhouettes over the summer-sky gradient, per .web-ui-ref/Budget Sandbox -
+// Natsu.html. Static markup, cheap to re-render.
+function renderSummerDecor() {
+  return `
+    <svg viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:0;">
+      <path d="M -40 820 C 70 720 130 742 186 676 C 232 622 262 652 322 610 C 378 570 356 494 430 462 C 502 430 556 476 598 522 C 640 568 682 566 742 608 C 802 650 842 626 900 668 C 962 712 1042 700 1102 750 C 1146 786 1196 796 1240 820 Z" fill="#ffffff" opacity="0.62" />
+      <path d="M -40 820 C 70 720 130 742 186 676 C 232 622 262 652 322 610 C 378 570 356 494 430 462 C 502 430 556 476 598 522 C 640 568 682 566 742 608 C 802 650 842 626 900 668 C 962 712 1042 700 1102 750 C 1146 786 1196 796 1240 820" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.85" />
+      <path d="M 640 820 C 700 764 742 780 790 736 C 836 694 880 706 934 676 C 986 648 1044 664 1092 636 C 1140 608 1180 618 1240 596 L 1240 820 Z" fill="#ffffff" opacity="0.34" />
+    </svg>
+  `;
+}
+
+// Global nav tabs: same weight, always visible (see .webui-ref navigation
+// brief). 'nodes' stays highlighted on ノード詳細 too - that page is a child
+// of ノード一覧, not a separate top-level destination.
+const NAV_TABS = [
+  ['dashboard', 'ダッシュボード', ['dashboard']],
+  ['record', '記録', ['record']],
+  ['tx', '取引一覧', ['tx']],
+  ['nodes', 'ノード一覧', ['nodes', 'detail']]
+];
+
 function renderHeader() {
+  const tabsHtml = NAV_TABS.map(([id, label, owns]) => {
+    const active = owns.includes(state.page);
+    return `<button type="button" class="nav-tab${active ? ' active' : ''}" data-nav="${id}">${label}</button>`;
+  }).join('');
+
   return `
     <header>
       <div class="header-inner">
@@ -567,11 +682,11 @@ function renderHeader() {
         </button>
         <div class="header-right">
           <span>${esc(session?.user?.email ?? '')}</span>
-          <button class="btn" data-nav="analysis">構成比</button>
-          <button class="btn" data-nav="settings">設定</button>
-          <button class="btn" id="logout-btn">ログアウト</button>
+          <button type="button" class="header-link" data-nav="analysis">構成比</button>
+          <button type="button" class="header-link" data-nav="settings">設定</button>
         </div>
       </div>
+      <nav class="nav-tabs">${tabsHtml}</nav>
     </header>
   `;
 }
@@ -580,10 +695,6 @@ function wireHeader() {
   root.querySelectorAll('[data-nav]').forEach((el) => {
     el.addEventListener('click', () => go(el.dataset.nav));
   });
-  const logoutBtn = document.getElementById('logout-btn');
-  if (logoutBtn) {
-    logoutBtn.addEventListener('click', handleLogout);
-  }
 }
 
 // ============================================================
@@ -592,7 +703,7 @@ function wireHeader() {
 
 function renderLoginPage() {
   return `
-    <div style="max-width:380px;margin:6vh auto 0;" class="card">
+    <div style="max-width:380px;margin:6vh auto 0;position:relative;z-index:1;" class="card">
       <h1 style="font-size:20px;">ログイン</h1>
       <p style="margin:4px 0 22px;font-size:13px;color:var(--muted);line-height:1.6;">Budget Sandbox のアカウントでサインインします。</p>
       <div class="stack" style="gap:14px;">
@@ -759,7 +870,7 @@ function wireDashboard() {
 // 構成比
 // ============================================================
 
-const CHART_COLORS = ['#0f6b5c', '#2f6f9e', '#b08968', '#7d5ba6', '#b03a2e', '#4d8076', '#c9a227', '#5c6bc0'];
+const CHART_COLORS = ['#2f7fa8', '#a95742', '#6d7fa3', '#c9974a', '#4d8f8a', '#7d6fa3', '#3c5163', '#5f8f6e'];
 
 // No chart library - one <path> arc per entry, share of `total` in radians,
 // drawn as a ring (outer radius r, punched out down to holeR). A lone
@@ -865,7 +976,7 @@ async function renderAnalysisPage() {
   `;
 
   return `
-    <div class="breadcrumb"><a href="#" data-nav="dashboard">ダッシュボード</a><span>/</span><span>構成比</span></div>
+    <button type="button" class="back-link" data-go-back>← 戻る</button>
     <div class="card-head">
       <h1>構成比</h1>
       ${periodSelect}
@@ -891,66 +1002,95 @@ function wireAnalysisPage() {
 // ============================================================
 
 async function renderRecordPage() {
-  // editingLineId/selectedToNode are plain globals, not part of `state`, so
-  // they must be derived fresh from state.editLine on every render - not
-  // just set when editing, or a fresh (non-edit) visit to this page after an
-  // earlier edit session would keep showing 更新 instead of 登録.
+  // editingLineId/selectedToNode/selectedFromNode/recordSlot are plain
+  // globals, not part of `state`, so they must be derived fresh from
+  // state.editLine on every render - not just set when editing, or a fresh
+  // (non-edit) visit to this page after an earlier edit session would keep
+  // showing 更新 instead of 登録.
   const editLine = state.editLine ?? null;
-  if (editLine) {
-    editingLineId = editLine.id;
-    selectedToNode = { id: editLine.to_node, path: editLine.to_name };
-  } else {
-    editingLineId = null;
-    selectedToNode = null;
-  }
 
-  const [assetsAndLiabilities, suggestions, todayLines] = await Promise.all([
+  const [leafNodes, suggestions, todayLines] = await Promise.all([
     getLeafNodes(supabase),
     getNodeSuggestions(supabase, 8),
     listLines(supabase, { ascending: false, limit: 50 }, memoKey)
   ]);
 
-  const typeOrder = { asset: 0, liability: 1, flow: 2 };
-  assetsAndLiabilities.sort((a, b) => typeOrder[a.node_type] - typeOrder[b.node_type] || a.name.localeCompare(b.name));
+  // 出どころ candidates are asset/liability leaves only (DESIGN.md UX方針:
+  // "fromは財布か銀行かの2択がほとんど") - a fixed always-visible set, not a
+  // frequency-ranked top-N, since a rarely-used account still deserves one tap.
+  const fromCandidates = leafNodes
+    .filter((n) => n.node_type === 'asset' || n.node_type === 'liability')
+    .sort((a, b) => a.name.localeCompare(b.name));
 
-  const fromValue = editLine?.from_node ?? assetsAndLiabilities[0]?.id ?? '';
-  const fromOptions = assetsAndLiabilities
-    .map((n) => `<option value="${n.id}" ${n.id === fromValue ? 'selected' : ''}>${esc(n.name)}</option>`)
-    .join('');
+  if (editLine) {
+    editingLineId = editLine.id;
+    selectedFromNode = { id: editLine.from_node, name: editLine.from_name };
+    selectedToNode = { id: editLine.to_node, path: editLine.to_name };
+    recordSlot = 'to';
+  } else {
+    editingLineId = null;
+    if (!selectedFromNode) {
+      // First visit this session: fall back to 設定's 既定の出どころ, else
+      // just the first candidate. Once the user picks one, it persists
+      // across renders/submits (see add-btn handler) instead of resetting.
+      const storedDefaultId = localStorage.getItem('kakeibo:defaultFromNodeId');
+      const fallback = fromCandidates.find((n) => n.id === storedDefaultId) ?? fromCandidates[0];
+      selectedFromNode = fallback ? { id: fallback.id, name: fallback.name } : null;
+    }
+  }
 
-  const chipRow = suggestions
-    .map((s) => {
-      const selected = selectedToNode?.id === s.node_id;
-      return `<button type="button" class="chip${selected ? ' selected' : ''}" data-id="${s.node_id}" data-path="${esc(s.path ?? '')}">${esc((s.path ?? s.node_id).split(' > ').pop())}</button>`;
+  const fromChips = fromCandidates
+    .map((n) => {
+      const selected = selectedFromNode?.id === n.id;
+      return `<button type="button" class="chip${selected ? ' selected' : ''}" data-slot="from" data-id="${n.id}" data-name="${esc(n.name)}">${esc(n.name)}</button>`;
     })
     .join('');
+
+  const toChips = suggestions
+    .map((s) => {
+      const selected = selectedToNode?.id === s.node_id;
+      return `<button type="button" class="chip${selected ? ' selected' : ''}" data-slot="to" data-id="${s.node_id}" data-path="${esc(s.path ?? '')}">${esc((s.path ?? s.node_id).split(' > ').pop())}</button>`;
+    })
+    .join('');
+
+  const isFromSlot = recordSlot === 'from';
+  const fromLabel = selectedFromNode ? esc(selectedFromNode.name) : '未選択';
+  const toLabel = selectedToNode ? esc((selectedToNode.path ?? selectedToNode.id).split(' > ').pop()) : '未選択';
 
   const todayISO = todayISODate();
   const todayRows = todayLines.filter((l) => l.occurred_on === todayISO).map((l) => renderTxRow(l)).join('')
     || '<p style="font-size:12px;color:var(--faint);">今日はまだありません</p>';
 
   return `
-    <div class="breadcrumb"><a href="#" data-nav="dashboard">ダッシュボード</a><span>/</span><span>記録</span></div>
     <div class="grid-fit-320">
       <section class="card">
         <div class="card-head">
           <h1>記録</h1>
-          <button type="button" class="btn" style="width:auto;" data-nav="manage">ノードを追加</button>
+          <button type="button" class="btn" style="width:auto;" data-open-manager>ノードを追加</button>
         </div>
         <p style="margin:2px 0 20px;font-size:12.5px;color:var(--muted);">お金の出どころと行き先を選んで金額を入れます。</p>
         <div class="stack" style="gap:18px;">
-          <label class="field">出どころ
-            <select id="from-select">${fromOptions}</select>
-          </label>
+          <div class="slot-row">
+            <button type="button" class="slot-btn${isFromSlot ? ' active' : ''}" id="from-slot-btn">
+              <span class="slot-label">出どころ</span>
+              <span class="slot-value">${fromLabel}</span>
+            </button>
+            <div class="slot-arrow">→</div>
+            <button type="button" class="slot-btn${isFromSlot ? '' : ' active'}" id="to-slot-btn">
+              <span class="slot-label">行き先</span>
+              <span class="slot-value">${toLabel}</span>
+            </button>
+          </div>
 
-          <div class="field" style="gap:8px;">
-            <div style="display:flex;align-items:baseline;justify-content:space-between;">
-              <span>行き先</span>
-              <span id="selected-to" style="color:var(--accent);font-size:12px;">${selectedToNode ? esc(selectedToNode.path ?? selectedToNode.id) : '未選択'}</span>
+          <div class="candidate-box">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;">
+              <span style="font-size:12px;font-weight:700;">${isFromSlot ? '出どころの候補' : '行き先の候補'}</span>
+              <span style="font-size:11px;color:var(--faint);">${isFromSlot ? '資産・負債' : '使用頻度順'}</span>
             </div>
-            <div class="chip-row" id="suggestions">${chipRow}</div>
-            <input id="to-search" type="text" placeholder="行き先を検索（食費、マクドナルド...）">
+            <div class="chip-row" id="candidate-chips">${isFromSlot ? fromChips : toChips}</div>
+            <input id="to-search" type="text" placeholder="${isFromSlot ? '資産・負債を検索（財布、銀行...）' : '行き先を検索（食費、マクドナルド...）'}">
             <div class="search-results" id="search-results"></div>
+            <p style="margin:0;font-size:11px;color:var(--faint);line-height:1.6;">${isFromSlot ? '資産・負債の葉ノードだけが並びます。選ぶと行き先の候補に切り替わります。' : '支出・収入先の葉ノードだけが並びます。'}</p>
           </div>
 
           <div class="grid-fit" style="grid-template-columns:1fr 1fr;">
@@ -972,27 +1112,39 @@ async function renderRecordPage() {
         <h2>今日の記録</h2>
         <p style="margin:2px 0 8px;font-size:12px;color:var(--muted);">登録するとここに追加されます。</p>
         <div id="today-tx">${todayRows}</div>
-        <p style="margin:12px 0 0;font-size:12px;color:var(--faint);line-height:1.7;">よく使う行き先は上のチップに自動で並びます。新しい店や科目は<a href="#" data-nav="manage">ノード管理</a>から作成できます。</p>
+        <p style="margin:12px 0 0;font-size:12px;color:var(--faint);line-height:1.7;">候補は出どころ・行き先それぞれの使用頻度から並びます。新しい店や科目は<a href="#" data-open-manager>ノード管理</a>から作成できます。</p>
       </section>
     </div>
   `;
 }
 
-function selectToNodeInline(node) {
-  selectedToNode = node;
-  document.getElementById('selected-to').textContent = node.path ?? node.name ?? node.id;
-  root.querySelectorAll('#suggestions .chip').forEach((btn) => {
-    btn.classList.toggle('selected', btn.dataset.id === node.id);
-  });
-  document.getElementById('search-results').innerHTML = '';
-  document.getElementById('to-search').value = '';
+// Shared by candidate-chip clicks and search-result clicks: routes the pick
+// to whichever slot is focused. Picking 出どころ auto-advances to 行き先
+// (the natural next step); picking 行き先 stays put since amount is next.
+function selectRecordCandidate(node) {
+  if (recordSlot === 'from') {
+    selectedFromNode = node;
+    recordSlot = 'to';
+  } else {
+    selectedToNode = node;
+  }
+  render();
 }
 
 function wireRecord() {
   attachTxRowActions(document.getElementById('today-tx'));
 
-  root.querySelectorAll('#suggestions .chip').forEach((btn) => {
-    btn.addEventListener('click', () => selectToNodeInline({ id: btn.dataset.id, path: btn.dataset.path }));
+  document.getElementById('from-slot-btn').addEventListener('click', () => {
+    recordSlot = 'from';
+    render();
+  });
+  document.getElementById('to-slot-btn').addEventListener('click', () => {
+    recordSlot = 'to';
+    render();
+  });
+
+  root.querySelectorAll('#candidate-chips .chip').forEach((btn) => {
+    btn.addEventListener('click', () => selectRecordCandidate({ id: btn.dataset.id, name: btn.dataset.name, path: btn.dataset.path }));
   });
 
   document.getElementById('to-search').addEventListener('input', async (e) => {
@@ -1003,15 +1155,18 @@ function wireRecord() {
       return;
     }
     const results = await searchNodes(supabase, query);
-    resultsEl.innerHTML = results.map((n) => `<div data-id="${n.id}" data-path="${esc(n.path)}">${esc(n.path)}</div>`).join('');
+    const isFromSlot = recordSlot === 'from';
+    const filtered = results.filter((n) => isFromSlot ? (n.node_type === 'asset' || n.node_type === 'liability') : n.node_type === 'flow');
+    resultsEl.innerHTML = filtered.map((n) => `<div data-id="${n.id}" data-path="${esc(n.path)}" data-name="${esc(n.name)}">${esc(n.path)}</div>`).join('');
     resultsEl.querySelectorAll('div').forEach((el) => {
-      el.addEventListener('click', () => selectToNodeInline({ id: el.dataset.id, path: el.dataset.path }));
+      el.addEventListener('click', () => selectRecordCandidate({ id: el.dataset.id, name: el.dataset.name, path: el.dataset.path }));
     });
   });
 
   document.getElementById('cancel-edit-btn').addEventListener('click', () => {
     editingLineId = null;
     selectedToNode = null;
+    recordSlot = 'to';
     state.editLine = null;
     render();
   });
@@ -1020,22 +1175,27 @@ function wireRecord() {
     const errorEl = document.getElementById('add-error');
     errorEl.textContent = '';
 
+    if (!selectedFromNode) {
+      errorEl.textContent = '出どころを選択してください';
+      return;
+    }
     if (!selectedToNode) {
       errorEl.textContent = '行き先を選択してください';
       return;
     }
 
-    const fromNode = document.getElementById('from-select').value;
+    const fromNode = selectedFromNode.id;
+    const toNode = selectedToNode.id;
     const amount = Number(document.getElementById('amount').value);
     const memo = document.getElementById('memo').value;
     const occurredOn = document.getElementById('occurred-on').value;
 
     try {
       if (editingLineId) {
-        await reviseLine(supabase, editingLineId, { occurredOn, fromNode, toNode: selectedToNode.id, amount, memo }, memoKey);
+        await reviseLine(supabase, editingLineId, { occurredOn, fromNode, toNode, amount, memo }, memoKey);
       } else {
         const { data: { user } } = await supabase.auth.getUser();
-        await recordLine(supabase, { userId: user.id, occurredOn, fromNode, toNode: selectedToNode.id, amount, memo }, memoKey);
+        await recordLine(supabase, { userId: user.id, occurredOn, fromNode, toNode, amount, memo }, memoKey);
       }
     } catch (error) {
       errorEl.textContent = error.message;
@@ -1043,7 +1203,10 @@ function wireRecord() {
     }
 
     editingLineId = null;
+    // selectedFromNode intentionally survives - the next entry is very
+    // often from the same source (DESIGN.md UX方針).
     selectedToNode = null;
+    recordSlot = 'to';
     state.editLine = null;
     invalidateTxCache();
     render();
@@ -1099,7 +1262,6 @@ function renderTxListPage() {
   const total = txListRows.length;
 
   return `
-    <div class="breadcrumb"><a href="#" data-nav="dashboard">ダッシュボード</a><span>/</span><span>取引一覧</span></div>
     <section class="card">
       <div class="card-head">
         <div>
@@ -1247,13 +1409,12 @@ async function renderNodesPage() {
 
   const pageHead = (note) => `
     <div class="stack" style="gap:12px;">
-      <div class="breadcrumb"><a href="#" data-nav="dashboard">ダッシュボード</a><span>/</span><span>ノード一覧</span></div>
       <div class="card-head">
         <div>
           <h1>ノード一覧</h1>
           <p style="margin:2px 0 0;font-size:12.5px;color:var(--muted);">${note}</p>
         </div>
-        <button class="btn-primary" style="width:auto;" data-nav="manage">ノードを作成</button>
+        <button class="btn-primary" style="width:auto;" data-open-manager>ノードを作成</button>
       </div>
       <div style="display:flex;gap:8px;align-items:center;">
         <button type="button" id="toggle-archived-btn" class="btn">${showArchivedNodes ? 'アーカイブ済みを隠す' : 'アーカイブ済みを表示'}</button>
@@ -1414,8 +1575,8 @@ async function renderDetailPage() {
         <p style="margin:0 0 18px;font-size:12px;color:var(--muted);">子孫を含む累計・全期間</p>
 
         <div class="chart-toggle">
-          <button type="button" id="chart-mode-cumulative" class="btn${chartMode === 'cumulative' ? ' selected' : ''}" style="${chartMode === 'cumulative' ? 'background:var(--text);color:#fff;' : ''}">累積推移</button>
-          <button type="button" id="chart-mode-daily" class="btn${chartMode === 'daily' ? ' selected' : ''}" style="${chartMode === 'daily' ? 'background:var(--text);color:#fff;' : ''}">1日あたり推移</button>
+          <button type="button" id="chart-mode-cumulative" class="btn${chartMode === 'cumulative' ? ' selected' : ''}" style="${chartMode === 'cumulative' ? 'background:var(--text);color:var(--card);' : ''}">累積推移</button>
+          <button type="button" id="chart-mode-daily" class="btn${chartMode === 'daily' ? ' selected' : ''}" style="${chartMode === 'daily' ? 'background:var(--text);color:var(--card);' : ''}">1日あたり推移</button>
         </div>
         <div style="font-size:11.5px;color:var(--faint);margin:12px 0 6px;">${chartTitle}</div>
         ${renderBarChartAxis(chartData, valueKey, chartMaxAbs, isNodeHidden(nodeId))}
@@ -1451,10 +1612,14 @@ function wireDetailPage() {
 // ノード管理
 // ============================================================
 
-async function renderManagePage() {
+// ノード管理: a modal layered over whichever screen opened it (記録 or
+// ノード一覧), not a page - see .webui-ref navigation brief 2-C. Its tree is
+// a lightweight reference for placement only; balances/graphs/archiving
+// stay the job of ノード一覧 (brief's explicit boundary, not to be blurred).
+async function renderManagerModal() {
   const nodes = await loadAllNodesWithPaths();
-  const pending = state.pendingPromote ?? null;
-  const editNode = state.editNode ?? null;
+  const pending = managerPendingPromote;
+  const editNode = managerEditNode;
 
   // A node can't become its own parent, and can't move under its own
   // descendant either (the DB blocks the cycle anyway, but filtering it out
@@ -1482,7 +1647,7 @@ async function renderManagePage() {
         「${esc(parentNode?.name ?? '')}」には既に記録があります。既存の記録を「その他（${esc(parentNode?.name ?? '')}）」へ移して階層化しますか？
       </p>
       <div style="display:flex;gap:8px;">
-        <button id="confirm-promote-btn" class="btn" style="background:var(--text);color:#fff;border:none;">${pending.action === 'move' ? '移して更新' : '移して作成'}</button>
+        <button id="confirm-promote-btn" class="btn" style="background:var(--text);color:var(--card);border:none;">${pending.action === 'move' ? '移して更新' : '移して作成'}</button>
         <button id="cancel-promote-btn" class="btn">やめる</button>
       </div>
     </div>
@@ -1501,12 +1666,18 @@ async function renderManagePage() {
   `);
 
   return `
-    <div class="breadcrumb"><a href="#" data-nav="nodes">ノード一覧</a><span>/</span><span>ノード管理</span></div>
-    <div class="grid-fit-320">
-      <section class="card">
-        <h1>${editNode ? `ノードを編集：${esc(editNode.name)}` : 'ノード管理'}</h1>
-        <p style="margin:2px 0 20px;font-size:12.5px;color:var(--muted);">${editNode ? '名前と親ノード（＝一覧上の位置）を変更できます。種別は変更できません。' : '資産・負債・支出先を作成し、階層に組み込みます。'}</p>
+    <div class="modal-backdrop" id="manager-backdrop"></div>
+    <div role="dialog" aria-label="ノード管理" class="modal-panel">
+      <div class="modal-head">
+        <div>
+          <h2>ノード管理</h2>
+          <p style="margin:3px 0 0;font-size:12px;color:var(--muted);">「${esc(managerFrom)}」の上に重ねて表示中。閉じると元の画面に戻ります。</p>
+        </div>
+        <button type="button" class="modal-close-btn" id="manager-close-btn">×</button>
+      </div>
+      <div class="modal-body">
         <div class="stack" style="gap:16px;">
+          <h1 style="font-size:14px;">${editNode ? `ノードを編集：${esc(editNode.name)}` : '新しいノード'}</h1>
           <label class="field">親ノード<select id="node-parent-select">${parentOptions}</select></label>
           <label class="field">種別
             <select id="node-type-select" ${editNode ? 'disabled' : ''}>
@@ -1527,27 +1698,30 @@ async function renderManagePage() {
             <button id="cancel-node-edit-btn" type="button" class="btn" style="${editNode ? '' : 'display:none;'}">キャンセル</button>
           </div>
           <p id="node-create-error" style="color:var(--negative);font-size:12px;margin:0;"></p>
+          ${confirmBox}
         </div>
-        ${confirmBox}
-      </section>
 
-      <section class="card">
-        <h2>既存の階層</h2>
-        <p style="margin:2px 0 10px;font-size:12px;color:var(--muted);">▸で子ノードを展開できます。編集で名前・位置を変更、削除で関連する取引ごと削除します。</p>
-        <div id="tree-rows">${treeRows}</div>
-      </section>
+        <div>
+          <h3>既存の階層</h3>
+          <p style="margin:4px 0 8px;font-size:11.5px;color:var(--faint);line-height:1.7;">配置を決めるための参照です。残高・グラフ・アーカイブはノード一覧の役割です。</p>
+          <div id="tree-rows">${treeRows}</div>
+        </div>
+      </div>
     </div>
   `;
 }
 
-function wireManagePage() {
+function wireManagerModal() {
+  document.getElementById('manager-backdrop').addEventListener('click', closeManager);
+  document.getElementById('manager-close-btn').addEventListener('click', closeManager);
+
   const excludeFlowField = document.getElementById('node-exclude-flow-field');
   const syncExcludeFlowVisibility = () => {
     excludeFlowField.style.display = document.getElementById('node-type-select').value === 'flow' ? '' : 'none';
   };
 
   document.getElementById('node-parent-select').addEventListener('change', (e) => {
-    if (state.editNode) return; // type stays locked while editing, regardless of parent
+    if (managerEditNode) return; // type stays locked while editing, regardless of parent
     const typeSelect = document.getElementById('node-type-select');
     const parent = nodesById.get(e.target.value);
     if (parent) {
@@ -1574,7 +1748,7 @@ function wireManagePage() {
       return;
     }
 
-    const editNode = state.editNode;
+    const editNode = managerEditNode;
 
     try {
       if (editNode) {
@@ -1585,7 +1759,7 @@ function wireManagePage() {
       }
     } catch (error) {
       if (parentId && error.message.includes('promote_to_parent')) {
-        state.pendingPromote = editNode
+        managerPendingPromote = editNode
           ? { action: 'move', nodeId: editNode.id, parentId, name }
           : { action: 'create', parentId, nodeType, name };
         render();
@@ -1595,15 +1769,17 @@ function wireManagePage() {
       return;
     }
 
-    state.pendingPromote = null;
-    state.editNode = null;
+    // Stays open (unlike closeManager) so adding several nodes in a row
+    // doesn't mean reopening the modal each time.
+    managerPendingPromote = null;
+    managerEditNode = null;
     render();
   });
 
   const confirmBtn = document.getElementById('confirm-promote-btn');
   if (confirmBtn) {
     confirmBtn.addEventListener('click', async () => {
-      const pending = state.pendingPromote;
+      const pending = managerPendingPromote;
       try {
         await promoteToParent(supabase, pending.parentId);
         if (pending.action === 'move') {
@@ -1616,8 +1792,8 @@ function wireManagePage() {
         document.getElementById('node-create-error').textContent = error.message;
         return;
       }
-      state.pendingPromote = null;
-      state.editNode = null;
+      managerPendingPromote = null;
+      managerEditNode = null;
       render();
     });
   }
@@ -1625,7 +1801,7 @@ function wireManagePage() {
   const cancelBtn = document.getElementById('cancel-promote-btn');
   if (cancelBtn) {
     cancelBtn.addEventListener('click', () => {
-      state.pendingPromote = null;
+      managerPendingPromote = null;
       render();
     });
   }
@@ -1633,18 +1809,17 @@ function wireManagePage() {
   const cancelEditBtn = document.getElementById('cancel-node-edit-btn');
   if (cancelEditBtn) {
     cancelEditBtn.addEventListener('click', () => {
-      state.editNode = null;
-      state.pendingPromote = null;
+      managerEditNode = null;
+      managerPendingPromote = null;
       render();
     });
   }
 
   root.querySelectorAll('.tree-edit-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      state.editNode = nodesById.get(btn.dataset.id);
-      state.pendingPromote = null;
+      managerEditNode = nodesById.get(btn.dataset.id);
+      managerPendingPromote = null;
       render();
-      window.scrollTo(0, 0);
     });
   });
 
@@ -1662,7 +1837,7 @@ function renderSettingsPage() {
   const displayName = localStorage.getItem('kakeibo:displayName') ?? '';
 
   return `
-    <div class="breadcrumb"><a href="#" data-nav="dashboard">ダッシュボード</a><span>/</span><span>設定</span></div>
+    <button type="button" class="back-link" data-go-back>← 戻る</button>
     <div class="grid-fit-300">
       <section class="card">
         <h1 style="margin-bottom:16px;">アカウント</h1>
@@ -1782,7 +1957,7 @@ async function handleExportCsv() {
 
 async function render() {
   if (!session) {
-    root.innerHTML = renderLoginPage();
+    root.innerHTML = renderSummerDecor() + renderLoginPage();
     wireLogin();
     return;
   }
@@ -1812,10 +1987,6 @@ async function render() {
       pageHtml = await renderDetailPage();
       wire = wireDetailPage;
       break;
-    case 'manage':
-      pageHtml = await renderManagePage();
-      wire = wireManagePage;
-      break;
     case 'settings':
       pageHtml = renderSettingsPage();
       wire = wireSettingsPage;
@@ -1826,7 +1997,8 @@ async function render() {
       wire = wireDashboard;
   }
 
-  root.innerHTML = `<div class="app-shell">${renderHeader()}<main>${pageHtml}</main></div>`;
+  const managerHtml = managerOpen ? await renderManagerModal() : '';
+  root.innerHTML = `${renderSummerDecor()}<div class="app-shell">${renderHeader()}<main>${pageHtml}</main>${managerHtml}</div>`;
   wireHeader();
   root.querySelectorAll('[data-node-hide-id]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
@@ -1840,7 +2012,17 @@ async function render() {
       toggleNodeExpanded(btn.dataset.treeToggleId);
     });
   });
+  root.querySelectorAll('[data-open-manager]').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      openManager();
+    });
+  });
+  root.querySelectorAll('[data-go-back]').forEach((el) => {
+    el.addEventListener('click', goBack);
+  });
   await wire();
+  if (managerOpen) await wireManagerModal();
 }
 
 const { data: { session: existingSession } } = await supabase.auth.getSession();
