@@ -277,6 +277,10 @@ let selectedToNode = null;
 let recordSlot = 'to';
 let selectedFromNode = null;
 let editingLineId = null;
+// Leaf-node ids valid as a line endpoint, refreshed on every renderRecordPage
+// call; used by the search box to allow any node_type (asset/liability/flow)
+// in either slot while still enforcing "記録先は葉ノードのみ" (DESIGN.md).
+let recordLeafNodeIds = new Set();
 // Where 設定/構成比 (neither part of the nav-tab row) should return to when
 // closed - the page that was active right before navigating to them.
 let prevPage = 'record';
@@ -1055,12 +1059,17 @@ async function renderRecordPage() {
     listLines(supabase, { ascending: false, limit: 50 }, memoKey)
   ]);
 
-  // 出どころ candidates are asset/liability leaves only (DESIGN.md UX方針:
+  // Quick 出どころ chips default to asset/liability leaves (DESIGN.md UX方針:
   // "fromは財布か銀行かの2択がほとんど") - a fixed always-visible set, not a
   // frequency-ranked top-N, since a rarely-used account still deserves one tap.
+  // This is only the default shortlist: the search box below (any slot) can
+  // find and select a leaf node of ANY node_type, so a flow node (初期値,
+  // ポイント還元, 運用損益, ...) can still be picked as 出どころ when needed.
   const fromCandidates = leafNodes
     .filter((n) => n.node_type === 'asset' || n.node_type === 'liability')
     .sort((a, b) => a.name.localeCompare(b.name));
+
+  recordLeafNodeIds = new Set(leafNodes.map((n) => n.id));
 
   if (editLine) {
     editingLineId = editLine.id;
@@ -1128,9 +1137,9 @@ async function renderRecordPage() {
               <span style="font-size:11px;color:var(--faint);">${isFromSlot ? '資産・負債' : '使用頻度順'}</span>
             </div>
             <div class="chip-row" id="candidate-chips">${isFromSlot ? fromChips : toChips}</div>
-            <input id="to-search" type="text" placeholder="${isFromSlot ? '資産・負債を検索（財布、銀行...）' : '行き先を検索（食費、マクドナルド...）'}">
+            <input id="to-search" type="text" placeholder="${isFromSlot ? '出どころを検索（財布、銀行、初期値...）' : '行き先を検索（食費、マクドナルド...）'}">
             <div class="search-results" id="search-results"></div>
-            <p style="margin:0;font-size:11px;color:var(--faint);line-height:1.6;">${isFromSlot ? '資産・負債の葉ノードだけが並びます。選ぶと行き先の候補に切り替わります。' : '支出・収入先の葉ノードだけが並びます。'}</p>
+            <p style="margin:0;font-size:11px;color:var(--faint);line-height:1.6;">${isFromSlot ? 'すべてのノードから検索できます。選ぶと行き先の候補に切り替わります。' : 'すべてのノードから検索できます。'}</p>
           </div>
 
           <div class="grid-fit" style="grid-template-columns:1fr 1fr;">
@@ -1195,9 +1204,14 @@ function wireRecord() {
       return;
     }
     const results = await searchNodes(supabase, query);
-    const isFromSlot = recordSlot === 'from';
-    const filtered = results.filter((n) => isFromSlot ? (n.node_type === 'asset' || n.node_type === 'liability') : n.node_type === 'flow');
-    resultsEl.innerHTML = filtered.map((n) => `<div data-id="${n.id}" data-path="${esc(n.path)}" data-name="${esc(n.name)}">${esc(n.path)}</div>`).join('');
+    // Any node_type is a valid 出どころ/行き先 (asset/liability/flow can all
+    // appear on either side of a line - see DESIGN.md 4.仕訳パターン, e.g.
+    // 初期値(flow)→銀行(asset) or クレカ(liability)→立て替え(asset)) - only
+    // leaf-ness is restricted, since only leaf nodes can be line endpoints.
+    const filtered = results.filter((n) => recordLeafNodeIds.has(n.id));
+    // Now that results can mix asset/liability/flow, tag each row with its
+    // node_type so e.g. a flow "食費" and an asset "食費" aren't ambiguous.
+    resultsEl.innerHTML = filtered.map((n) => `<div data-id="${n.id}" data-path="${esc(n.path)}" data-name="${esc(n.name)}"><span style="color:${NODE_TYPE_META[n.node_type].color};font-size:11px;margin-right:6px;">${NODE_TYPE_META[n.node_type].label}</span>${esc(n.path)}</div>`).join('');
     resultsEl.querySelectorAll('div').forEach((el) => {
       el.addEventListener('click', () => selectRecordCandidate({ id: el.dataset.id, name: el.dataset.name, path: el.dataset.path }));
     });
