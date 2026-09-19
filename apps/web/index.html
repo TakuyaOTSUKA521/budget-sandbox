@@ -975,15 +975,18 @@ function renderDonutChart(entries, total, size = 132) {
     const d = `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} L ${ix2} ${iy2} A ${holeR} ${holeR} 0 ${large} 0 ${ix1} ${iy1} Z`;
     const pct = (e.amount / total) * 100;
     const tooltip = `${esc(e.node.name)}: ${maskNodeYen(e.node.id, e.amount)} (${pct.toFixed(1)}%)`;
-    return `<path class="donut-slice" d="${d}" fill="${CHART_COLORS[i % CHART_COLORS.length]}"><title>${tooltip}</title></path>`;
+    return `<path class="donut-slice" d="${d}" fill="${CHART_COLORS[(e.colorIndex ?? i) % CHART_COLORS.length]}"><title>${tooltip}</title></path>`;
   }).join('');
 
   return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="flex:0 0 auto;">${paths}</svg>`;
 }
 
-// One 支出/収入/資産/負債 breakdown card: entries already carry a positive
-// `amount`; this only turns them into a donut + legend. No aggregation here -
-// `amount` was summed from view rows by the caller (see renderAnalysisPage).
+// One 支出/収入/資産/負債 breakdown card: entries usually carry a positive
+// `amount`, but an asset/liability entry may be <= 0 (e.g. a node that went
+// negative) - see renderAnalysisPage. `total` sums every entry as-is so it
+// always matches v_net_worth; only the donut excludes non-positive entries
+// (a negative slice can't be drawn), keeping them in the legend instead.
+// No aggregation here - `amount` was summed from view rows by the caller.
 // `subtitle` states this section's display rule (period-scoped vs. current
 // balance) right under its heading - see DESIGN.md's 構成比解析 note on why
 // asset/liability totals don't move with the period selector.
@@ -1005,11 +1008,15 @@ function compositionSection(title, entries, subtitle = '') {
   const anyHidden = entries.some((e) => isNodeHidden(e.node.id));
   const totalLabel = anyHidden ? '••••••' : yen(total);
 
-  const legendRows = entries.map((e, i) => {
+  const indexedEntries = entries.map((e, i) => ({ ...e, colorIndex: i }));
+  const chartEntries = indexedEntries.filter((e) => e.amount > 0);
+  const chartTotal = chartEntries.reduce((sum, e) => sum + e.amount, 0);
+
+  const legendRows = indexedEntries.map((e) => {
     const pct = total ? (e.amount / total) * 100 : 0;
     return `
       <div class="row">
-        <span class="chart-swatch" style="background:${CHART_COLORS[i % CHART_COLORS.length]};"></span>
+        <span class="chart-swatch" style="background:${e.amount > 0 ? CHART_COLORS[e.colorIndex % CHART_COLORS.length] : 'transparent'};"></span>
         <span style="flex:1;min-width:0;">${esc(e.node.name)}</span>
         <span class="mono" style="min-width:74px;text-align:right;">${maskNodeYen(e.node.id, e.amount)}</span>
         <span style="min-width:46px;text-align:right;font-size:11.5px;color:var(--muted);">${pct.toFixed(1)}%</span>
@@ -1028,7 +1035,7 @@ function compositionSection(title, entries, subtitle = '') {
         <span class="mono" style="font-size:20px;font-weight:700;">${totalLabel}</span>
       </div>
       <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:10px;">
-        ${renderDonutChart(entries, total)}
+        ${renderDonutChart(chartEntries, chartTotal)}
         <div style="flex:1;min-width:200px;">${legendRows}</div>
       </div>
     </section>
@@ -1061,13 +1068,15 @@ async function renderAnalysisPage() {
     .map((n) => ({ node: n, amount: -(deltaByNodeId.get(n.id) ?? 0) }))
     .filter((e) => e.amount > 0)
     .sort((a, b) => b.amount - a.amount);
+  // Kept even when amount <= 0 (e.g. an asset node that has gone negative,
+  // or a liability node that has gone positive) so this section's total
+  // still matches v_net_worth exactly - compositionSection excludes these
+  // from the donut but keeps them in the legend and the total.
   const assetEntries = rootAssetNodes
     .map((n) => ({ node: n, amount: balanceByNodeId.get(n.id) ?? 0 }))
-    .filter((e) => e.amount > 0)
     .sort((a, b) => b.amount - a.amount);
   const liabilityEntries = rootLiabilityNodes
-    .map((n) => ({ node: n, amount: Math.abs(balanceByNodeId.get(n.id) ?? 0) }))
-    .filter((e) => e.amount > 0)
+    .map((n) => ({ node: n, amount: -(balanceByNodeId.get(n.id) ?? 0) }))
     .sort((a, b) => b.amount - a.amount);
 
   const periodSelect = `
