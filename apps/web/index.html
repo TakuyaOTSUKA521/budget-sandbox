@@ -2080,8 +2080,9 @@ function renderSettingsPage() {
       <section class="card">
         <h2 style="margin-bottom:10px;">データ</h2>
         <div class="stack" style="gap:8px;align-items:flex-start;">
-          <button id="csv-export-btn" class="btn">CSV を書き出す</button>
-          <button id="csv-import-btn" class="btn">CSV を取り込む</button>
+          <button id="csv-export-btn" class="btn">取引をCSVで書き出す</button>
+          <button id="csv-import-btn" class="btn">取引をCSVで取り込む</button>
+          <button id="node-csv-export-btn" class="btn">ノード構成をCSVで書き出す</button>
           <button id="settings-logout-btn" class="btn-danger-outline">ログアウト</button>
         </div>
         <p style="margin:16px 0 0;font-size:11.5px;color:var(--faint);line-height:1.7;">記録は Supabase に保存され、memoは端末上で暗号化されます。</p>
@@ -2108,12 +2109,14 @@ async function wireSettingsPage() {
 
   document.getElementById('csv-export-btn').addEventListener('click', handleExportCsv);
   document.getElementById('csv-import-btn').addEventListener('click', () => alert('準備中: CSVの取り込みは未実装です。'));
+  document.getElementById('node-csv-export-btn').addEventListener('click', handleExportNodesCsv);
 
   document.getElementById('settings-logout-btn').addEventListener('click', handleLogout);
 }
 
-// Exports every active line (v_lines, all pages) as a CSV file. Encoding
-// only - no aggregation - so it stays in apps/web rather than packages/core.
+// Shared CSV download plumbing for the 設定 page's export buttons below.
+// Encoding only - no aggregation - so it stays in apps/web rather than
+// packages/core.
 function csvEscape(value) {
   let s = String(value ?? '');
   // Neutralize spreadsheet formula injection: Excel/Sheets treat a field
@@ -2124,6 +2127,22 @@ function csvEscape(value) {
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+function downloadCsv(filename, header, rows) {
+  const csv = [header, ...rows]
+    .map((cols) => cols.map(csvEscape).join(','))
+    .join('\r\n');
+
+  const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// Exports every active line (v_lines, all pages) as a CSV file.
 async function handleExportCsv() {
   const btn = document.getElementById('csv-export-btn');
   const originalLabel = btn.textContent;
@@ -2139,18 +2158,47 @@ async function handleExportCsv() {
     }
 
     const header = ['日付', '出どころ', '行き先', '金額', 'メモ'];
-    const csv = [header, ...rows.map((l) => [l.occurred_on, l.from_name, l.to_name, l.amount, l.memo])]
-      .map((cols) => cols.map(csvEscape).join(','))
-      .join('\r\n');
+    downloadCsv(
+      `kakeibo_${new Date().toISOString().slice(0, 10)}.csv`,
+      header,
+      rows.map((l) => [l.occurred_on, l.from_name, l.to_name, l.amount, l.memo])
+    );
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+}
 
-    const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `kakeibo_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+// Exports every node (including archived) with its hierarchy path and
+// node_type classification - a snapshot of the node tree, not a balance
+// report (see summary.js / reports.js for balances). Rows are grouped by
+// 分類 then sorted by path so parent/child rows land next to each other.
+async function handleExportNodesCsv() {
+  const btn = document.getElementById('node-csv-export-btn');
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '書き出し中…';
+  try {
+    const nodes = await listNodesWithPaths(supabase, { includeArchived: true });
+    const nameById = new Map(nodes.map((n) => [n.id, n.name]));
+    const typeOrder = { asset: 0, liability: 1, flow: 2 };
+    const sorted = [...nodes].sort((a, b) =>
+      typeOrder[a.node_type] - typeOrder[b.node_type] || a.path.localeCompare(b.path)
+    );
+
+    const header = ['分類', '階層パス', 'ノード名', '親ノード', '収支から除外', 'アーカイブ済み'];
+    downloadCsv(
+      `kakeibo_nodes_${new Date().toISOString().slice(0, 10)}.csv`,
+      header,
+      sorted.map((n) => [
+        NODE_TYPE_META[n.node_type].label,
+        n.path,
+        n.name,
+        n.parent_id ? nameById.get(n.parent_id) ?? '' : '',
+        n.exclude_from_flow_totals ? '○' : '',
+        n.is_archived ? '○' : ''
+      ])
+    );
   } finally {
     btn.disabled = false;
     btn.textContent = originalLabel;
