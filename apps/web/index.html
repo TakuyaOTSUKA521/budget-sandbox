@@ -195,6 +195,12 @@
   .node-card .mini-bar-track { height: 4px; background: var(--row-border); border-radius: 2px; overflow: hidden; margin-top: 2px; }
   .node-card .mini-bar-fill { display: block; height: 4px; }
   .node-card .sparkline { display: block; margin: 2px 0; }
+  /* 中間(親)ノードは子ノードの残高を集計しただけの箱で、記録先になる葉ノード
+     とは意味が違う。境界線を破線にし、控えめな "内訳" バッジを添えて区別する
+     (葉ノードだけがひと目でそれと分かるよう、葉側の見た目は変えない)。 */
+  .node-card--group { border-left-style: dashed; background: var(--bg); }
+  .node-card--group .name { color: var(--muted); }
+  .badge-group { font-size: 9px; font-weight: 600; letter-spacing: 0.02em; color: var(--muted); background: var(--row-border); border-radius: 4px; padding: 1px 5px; }
 
   .bar-chart-scroll { overflow-x: auto; overflow-y: hidden; min-width: 0; }
   .bar-chart-axis { display: flex; align-items: stretch; gap: 2px; height: 80px; padding: 0 2px; background: var(--card); border: 1px solid var(--card-border); border-radius: 8px; }
@@ -261,6 +267,9 @@ let session = null;
 let state = { page: 'login', detailNodeId: null };
 let chartMode = localStorage.getItem('kakeibo:chartMode') || 'cumulative';
 let nodeViewMode = localStorage.getItem('kakeibo:nodeViewMode') || 'list';
+// Card view only: 'all' shows every node (leaf and intermediate/group), 'leaf'
+// hides intermediate nodes so only the actual recording targets remain.
+let nodeCardFilter = localStorage.getItem('kakeibo:nodeCardFilter') || 'all';
 let hiddenNodeIds = new Set(JSON.parse(localStorage.getItem('kakeibo:hiddenNodeIds') || '[]'));
 // Independent of per-node hiding: masks only the 純資産 stat on the
 // dashboard, so a total can be hidden without hiding any individual node.
@@ -643,8 +652,12 @@ function renderBarChartAxis(points, valueKey, maxAbs, hidden) {
   const pointByDate = new Map(points.map((p) => [p.occurred_on, p]));
   const [fy, fm, fd] = points[0].occurred_on.split('-').map(Number);
   const [ly, lm, ld] = points[points.length - 1].occurred_on.split('-').map(Number);
+  const now = new Date();
+  const todayUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
   const firstUTC = Date.UTC(fy, fm - 1, fd);
-  const lastUTC = Date.UTC(ly, lm - 1, ld);
+  // Draw through today even if the last transaction was earlier - the
+  // trailing days just get an empty (0) slot, same as any other gap.
+  const lastUTC = Math.max(Date.UTC(ly, lm - 1, ld), todayUTC);
   const totalDays = Math.round((lastUTC - firstUTC) / MS_PER_DAY) + 1;
 
   const days = Array.from({ length: totalDays }, (_, i) => {
@@ -671,7 +684,14 @@ function renderBarChartAxis(points, valueKey, maxAbs, hidden) {
 
   const tickIdxs = [];
   for (let i = 0; i < days.length; i += BAR_TICK_INTERVAL_DAYS) tickIdxs.push(i);
-  if (tickIdxs[tickIdxs.length - 1] !== days.length - 1) tickIdxs.push(days.length - 1);
+  const lastDayIdx = days.length - 1;
+  if (tickIdxs[tickIdxs.length - 1] !== lastDayIdx) {
+    // Always show the latest date. If the regular interval's last tick would
+    // sit too close to it (label overlap), drop that tick in its favor.
+    const prevTickIdx = tickIdxs[tickIdxs.length - 1];
+    if (lastDayIdx - prevTickIdx < BAR_TICK_INTERVAL_DAYS / 2) tickIdxs.pop();
+    tickIdxs.push(lastDayIdx);
+  }
 
   const ticks = tickIdxs.map((idx, i) => {
     const x = BAR_CHART_PAD + idx * pitch + BAR_COL_WIDTH / 2;
@@ -1488,15 +1508,18 @@ const nodeRow = (balanceByNodeId, n, indent = 0, canArchive = false, hasChildren
   </div>
 `;
 
-function nodeCard(n, balanceByNodeId, { showPath = false, maxAbs = 1, sparkline = null, canArchive = false } = {}) {
+function nodeCard(n, balanceByNodeId, { showPath = true, maxAbs = 1, sparkline = null, canArchive = false, isLeaf = true } = {}) {
   const balance = Number(balanceByNodeId.get(n.id) ?? 0);
   const parentPath = showPath && n.path.includes(' > ') ? n.path.slice(0, n.path.lastIndexOf(' > ')) : '';
   const type = NODE_TYPE_META[n.node_type];
   const pct = Math.max(4, Math.round((Math.abs(balance) / maxAbs) * 100));
   return `
-    <div class="node-card clickable" data-id="${n.id}" data-name="${esc(n.name)}" style="border-left-color:${type.color};">
+    <div class="node-card clickable${isLeaf ? '' : ' node-card--group'}" data-id="${n.id}" data-name="${esc(n.name)}" style="border-left-color:${type.color};">
       <div style="display:flex;align-items:center;justify-content:space-between;">
-        <span class="badge" style="color:${type.color};">${type.label}</span>
+        <span style="display:flex;align-items:center;gap:5px;">
+          <span class="badge" style="color:${type.color};">${type.label}</span>
+          ${isLeaf ? '' : '<span class="badge-group">内訳(合計)</span>'}
+        </span>
         <span style="display:flex;">
           ${nodeHideToggleButton(n.id)}
           ${canArchive ? nodeArchiveButton(n.id) : ''}
@@ -1570,24 +1593,37 @@ async function renderNodesPage() {
   if (nodeViewMode === 'card') {
     // Color already distinguishes 資産/負債/収支, so card view mixes every
     // node into one grid (biggest balance first) instead of boxed sections.
-    const allNodes = [...nodes].sort((a, b) =>
+    let allNodes = [...nodes].sort((a, b) =>
       Math.abs(Number(balanceByNodeId.get(b.id) ?? 0)) - Math.abs(Number(balanceByNodeId.get(a.id) ?? 0))
     );
+    if (nodeCardFilter === 'leaf') allNodes = allNodes.filter((n) => canArchive(n));
+
     const sparklines = await Promise.all(allNodes.map((n) => getCumulative(supabase, n.id)));
     const sparklineByNodeId = new Map(allNodes.map((n, i) => [n.id, sparklines[i]]));
     const maxAbs = Math.max(...allNodes.map((n) => Math.abs(Number(balanceByNodeId.get(n.id) ?? 0))), 1);
 
     const cardsHtml = allNodes
       .map((n) => nodeCard(n, balanceByNodeId, {
-        showPath: n.node_type === 'flow',
         maxAbs,
         sparkline: sparklineByNodeId.get(n.id),
-        canArchive: canArchive(n)
+        canArchive: canArchive(n),
+        isLeaf: canArchive(n)
       }))
       .join('');
 
+    const cardFilterToggle = `
+      <div class="view-toggle">
+        <button type="button" id="card-filter-all-btn" class="btn${nodeCardFilter === 'all' ? ' selected' : ''}">すべて</button>
+        <button type="button" id="card-filter-leaf-btn" class="btn${nodeCardFilter === 'leaf' ? ' selected' : ''}">最下層のみ</button>
+      </div>
+    `;
+
     return `
-      ${pageHead('残高の推移(折れ線)・大きさ順に並んでいます。色は資産/負債/収支。')}
+      ${pageHead('残高の推移(折れ線)・大きさ順に並んでいます。色は資産/負債/収支。子ノードを持つカードは破線で「内訳(合計)」と表示されます。')}
+        <div style="display:flex;gap:8px;align-items:center;margin-top:-4px;">
+          <span style="font-size:11.5px;color:var(--faint);">表示するノード</span>
+          ${cardFilterToggle}
+        </div>
         <div class="node-card-grid">${cardsHtml || '<p style="font-size:12.5px;color:var(--faint);">ノードがありません</p>'}</div>
         ${archivedSection}
       </div>
@@ -1658,6 +1694,19 @@ function wireNodesPage() {
 
   document.getElementById('toggle-archived-btn').addEventListener('click', () => {
     showArchivedNodes = !showArchivedNodes;
+    render();
+  });
+
+  const cardFilterAllBtn = document.getElementById('card-filter-all-btn');
+  const cardFilterLeafBtn = document.getElementById('card-filter-leaf-btn');
+  cardFilterAllBtn?.addEventListener('click', () => {
+    nodeCardFilter = 'all';
+    localStorage.setItem('kakeibo:nodeCardFilter', nodeCardFilter);
+    render();
+  });
+  cardFilterLeafBtn?.addEventListener('click', () => {
+    nodeCardFilter = 'leaf';
+    localStorage.setItem('kakeibo:nodeCardFilter', nodeCardFilter);
     render();
   });
 

@@ -56,6 +56,20 @@
 | exclude_from_flow_totals | BOOLEAN NOT NULL DEFAULT false | 収支の集計・構成比解析から除外する(初期残高ノードなど) |
 | created_at | TIMESTAMPTZ DEFAULT now() | |
 
+**is_archived と集計の関係**
+
+`is_archived` は基本的に一覧・入力候補からノードを隠すだけで、取引記録や集計への
+算入は変えない(アーカイブしても過去の記録は残り、資産・負債の残高や親カテゴリの
+合計には引き続き含まれる)。
+
+例外は「親を持たない(ルート)flow ノード」をアーカイブした場合。この場合そのノード
+は構成比解析(apps/web の renderAnalysisPage、`listNodesWithPaths` の既定で
+is_archived を除外)からルート候補として選ばれなくなり、他に合算先の親も無いため
+その取引は構成比の集計から消える。`v_monthly_flow`(dashboard の今月の支出/収入)
+もこれに揃え、`WHERE NOT (is_archived AND parent_id IS NULL)` を条件に含める
+(子を持つノードの下にある葉ノードをアーカイブしても、この条件には引っかからず
+親カテゴリの合計に残り続ける)。
+
 **node_type の意味**
 
 | 値 | 意味 | 純資産に含める | 既定表示 |
