@@ -265,27 +265,31 @@ const root = document.getElementById('root');
 
 let session = null;
 let state = { page: 'login', detailNodeId: null };
-let chartMode = localStorage.getItem('kakeibo:chartMode') || 'cumulative';
-let nodeViewMode = localStorage.getItem('kakeibo:nodeViewMode') || 'list';
+// pref.*: localStorageに永続する、端末ごとの表示設定 (MAINTENANCE.md §1)
+const pref = {
+  chartMode: localStorage.getItem('kakeibo:chartMode') || 'cumulative',
+  nodeViewMode: localStorage.getItem('kakeibo:nodeViewMode') || 'list',
+  hiddenNodeIds: new Set(JSON.parse(localStorage.getItem('kakeibo:hiddenNodeIds') || '[]')),
+  netWorthHidden: localStorage.getItem('kakeibo:netWorthHidden') === '1',
+};
 // Card view only: 'all' shows every node (leaf and intermediate/group), 'leaf'
 // hides intermediate nodes so only the actual recording targets remain.
 let nodeCardFilter = localStorage.getItem('kakeibo:nodeCardFilter') || 'all';
-let hiddenNodeIds = new Set(JSON.parse(localStorage.getItem('kakeibo:hiddenNodeIds') || '[]'));
-// Independent of per-node hiding: masks only the 純資産 stat on the
-// dashboard, so a total can be hidden without hiding any individual node.
-let netWorthHidden = localStorage.getItem('kakeibo:netWorthHidden') === '1';
 let showArchivedNodes = false;
 // Which parent nodes are expanded in a collapsible hierarchy view (node
 // list's 資産/負債/支出・収入 sections, node management's tree). Starts empty
 // so every tree opens collapsed to just its top level (DESIGN.md UX方針).
 let expandedNodeIds = new Set();
 let selectedToNode = null;
+// ui.*: 数クリック程度の操作中の状態 (MAINTENANCE.md §1)
 // 記録: which of the two slots (出どころ/行き先) the shared candidate picker
-// is currently showing, and the chosen 出どころ. selectedFromNode
+// is currently showing, and the chosen 出どころ. ui.selectedFromNode
 // intentionally persists across a successful submit (unlike selectedToNode)
 // - see the comment in wireRecord's add-btn handler.
-let recordSlot = 'to';
-let selectedFromNode = null;
+const ui = {
+  recordSlot: 'to',
+  selectedFromNode: null,
+};
 let editingLineId = null;
 // Leaf-node ids valid as a line endpoint, refreshed on every renderRecordPage
 // call; used by the search box to allow any node_type (asset/liability/flow)
@@ -304,17 +308,20 @@ let managerPendingPromote = null;
 let nodesById = new Map();
 let linesById = new Map();
 let chartData = [];
-let txListRows = [];
+// cache.*: サーバーから取得したデータの保持、明示的に無効化するまで (MAINTENANCE.md §1)
+// Lives outside `state` (like pref.chartMode/ui.recordSlot) so cache.txPeriod stays in
+// sync with cache.txListRows/txListOffset across a go() navigation - state.txSearch
+// resets on every visit safely because it only filters already-fetched rows, but the
+// period actually decides which rows got fetched, so resetting it without also
+// invalidating the cache would leave the selector and the list disagreeing about
+// what's shown.
+const cache = {
+  txListRows: [],
+  txPeriod: 'all',
+};
 let txListOffset = 0;
 let txListDone = false;
 const TX_PAGE_SIZE = 20;
-// Lives outside `state` (like chartMode/recordSlot) so it stays in sync with
-// txListRows/txListOffset across a go() navigation - state.txSearch resets on
-// every visit safely because it only filters already-fetched rows, but the
-// period actually decides which rows got fetched, so resetting it without
-// also invalidating the cache would leave the selector and the list
-// disagreeing about what's shown.
-let txPeriod = 'all';
 
 function esc(str) {
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -329,7 +336,7 @@ function yen(n) {
 // while everything else stays visible). Transaction amounts are left alone -
 // hiding what things cost isn't the point, hiding how much money there is, is.
 function isNodeHidden(nodeId) {
-  return hiddenNodeIds.has(nodeId);
+  return pref.hiddenNodeIds.has(nodeId);
 }
 
 function maskNodeYen(nodeId, n) {
@@ -343,19 +350,19 @@ function nodeHideToggleButton(nodeId) {
 }
 
 function toggleNodeHidden(nodeId) {
-  if (hiddenNodeIds.has(nodeId)) hiddenNodeIds.delete(nodeId);
-  else hiddenNodeIds.add(nodeId);
-  localStorage.setItem('kakeibo:hiddenNodeIds', JSON.stringify([...hiddenNodeIds]));
+  if (pref.hiddenNodeIds.has(nodeId)) pref.hiddenNodeIds.delete(nodeId);
+  else pref.hiddenNodeIds.add(nodeId);
+  localStorage.setItem('kakeibo:hiddenNodeIds', JSON.stringify([...pref.hiddenNodeIds]));
   render();
 }
 
 function netWorthToggleButton() {
-  return `<button type="button" id="net-worth-hide-btn" class="node-hide-btn" title="${netWorthHidden ? '純資産を表示' : '純資産を非表示'}">${netWorthHidden ? '🙈' : '🐵'}</button>`;
+  return `<button type="button" id="net-worth-hide-btn" class="node-hide-btn" title="${pref.netWorthHidden ? '純資産を表示' : '純資産を非表示'}">${pref.netWorthHidden ? '🙈' : '🐵'}</button>`;
 }
 
 function toggleNetWorthHidden() {
-  netWorthHidden = !netWorthHidden;
-  localStorage.setItem('kakeibo:netWorthHidden', netWorthHidden ? '1' : '0');
+  pref.netWorthHidden = !pref.netWorthHidden;
+  localStorage.setItem('kakeibo:netWorthHidden', pref.netWorthHidden ? '1' : '0');
   render();
 }
 
@@ -482,10 +489,10 @@ async function handleLogout() {
   nodesById = new Map();
   linesById = new Map();
   chartData = [];
-  txListRows = [];
+  cache.txListRows = [];
   txListOffset = 0;
   txListDone = false;
-  txPeriod = 'all';
+  cache.txPeriod = 'all';
   go('login');
 }
 
@@ -601,7 +608,7 @@ function attachTxRowActions(container) {
 // any write must invalidate it so a stale (deleted/edited) row doesn't
 // linger there until an unrelated reload.
 function invalidateTxCache() {
-  txListRows = [];
+  cache.txListRows = [];
   txListOffset = 0;
   txListDone = false;
 }
@@ -882,7 +889,7 @@ async function renderDashboardPage() {
       <div class="grid-fit">
         <div class="card">
           <div class="stat-label" style="display:flex;align-items:center;justify-content:space-between;">純資産${netWorthToggleButton()}</div>
-          <div class="stat-value mono">${netWorthHidden ? '••••••' : yen(netWorth.net_worth)}</div>
+          <div class="stat-value mono">${pref.netWorthHidden ? '••••••' : yen(netWorth.net_worth)}</div>
         </div>
         <div class="card">
           <div class="stat-label">今月の支出</div>
@@ -1116,7 +1123,7 @@ function wireAnalysisPage() {
 // ============================================================
 
 async function renderRecordPage() {
-  // editingLineId/selectedToNode/selectedFromNode/recordSlot are plain
+  // editingLineId/selectedToNode/ui.selectedFromNode/ui.recordSlot are plain
   // globals, not part of `state`, so they must be derived fresh from
   // state.editLine on every render - not just set when editing, or a fresh
   // (non-edit) visit to this page after an earlier edit session would keep
@@ -1143,24 +1150,24 @@ async function renderRecordPage() {
 
   if (editLine) {
     editingLineId = editLine.id;
-    selectedFromNode = { id: editLine.from_node, name: editLine.from_name };
+    ui.selectedFromNode = { id: editLine.from_node, name: editLine.from_name };
     selectedToNode = { id: editLine.to_node, path: editLine.to_name };
-    recordSlot = 'to';
+    ui.recordSlot = 'to';
   } else {
     editingLineId = null;
-    if (!selectedFromNode) {
+    if (!ui.selectedFromNode) {
       // First visit this session: fall back to 設定's 既定の出どころ, else
       // just the first candidate. Once the user picks one, it persists
       // across renders/submits (see add-btn handler) instead of resetting.
       const storedDefaultId = localStorage.getItem('kakeibo:defaultFromNodeId');
       const fallback = fromCandidates.find((n) => n.id === storedDefaultId) ?? fromCandidates[0];
-      selectedFromNode = fallback ? { id: fallback.id, name: fallback.name } : null;
+      ui.selectedFromNode = fallback ? { id: fallback.id, name: fallback.name } : null;
     }
   }
 
   const fromChips = fromCandidates
     .map((n) => {
-      const selected = selectedFromNode?.id === n.id;
+      const selected = ui.selectedFromNode?.id === n.id;
       return `<button type="button" class="chip${selected ? ' selected' : ''}" data-slot="from" data-id="${n.id}" data-name="${esc(n.name)}">${esc(n.name)}</button>`;
     })
     .join('');
@@ -1172,8 +1179,8 @@ async function renderRecordPage() {
     })
     .join('');
 
-  const isFromSlot = recordSlot === 'from';
-  const fromLabel = selectedFromNode ? esc(selectedFromNode.name) : '未選択';
+  const isFromSlot = ui.recordSlot === 'from';
+  const fromLabel = ui.selectedFromNode ? esc(ui.selectedFromNode.name) : '未選択';
   const toLabel = selectedToNode ? esc((selectedToNode.path ?? selectedToNode.id).split(' > ').pop()) : '未選択';
 
   const todayISO = todayISODate();
@@ -1241,9 +1248,9 @@ async function renderRecordPage() {
 // to whichever slot is focused. Picking 出どころ auto-advances to 行き先
 // (the natural next step); picking 行き先 stays put since amount is next.
 function selectRecordCandidate(node) {
-  if (recordSlot === 'from') {
-    selectedFromNode = node;
-    recordSlot = 'to';
+  if (ui.recordSlot === 'from') {
+    ui.selectedFromNode = node;
+    ui.recordSlot = 'to';
   } else {
     selectedToNode = node;
   }
@@ -1254,11 +1261,11 @@ function wireRecord() {
   attachTxRowActions(document.getElementById('today-tx'));
 
   document.getElementById('from-slot-btn').addEventListener('click', () => {
-    recordSlot = 'from';
+    ui.recordSlot = 'from';
     render();
   });
   document.getElementById('to-slot-btn').addEventListener('click', () => {
-    recordSlot = 'to';
+    ui.recordSlot = 'to';
     render();
   });
 
@@ -1290,7 +1297,7 @@ function wireRecord() {
   document.getElementById('cancel-edit-btn').addEventListener('click', () => {
     editingLineId = null;
     selectedToNode = null;
-    recordSlot = 'to';
+    ui.recordSlot = 'to';
     state.editLine = null;
     render();
   });
@@ -1299,7 +1306,7 @@ function wireRecord() {
     const errorEl = document.getElementById('add-error');
     errorEl.textContent = '';
 
-    if (!selectedFromNode) {
+    if (!ui.selectedFromNode) {
       errorEl.textContent = '出どころを選択してください';
       return;
     }
@@ -1308,7 +1315,7 @@ function wireRecord() {
       return;
     }
 
-    const fromNode = selectedFromNode.id;
+    const fromNode = ui.selectedFromNode.id;
     const toNode = selectedToNode.id;
     const amount = Number(document.getElementById('amount').value);
     const memo = document.getElementById('memo').value;
@@ -1327,10 +1334,10 @@ function wireRecord() {
     }
 
     editingLineId = null;
-    // selectedFromNode intentionally survives - the next entry is very
+    // ui.selectedFromNode intentionally survives - the next entry is very
     // often from the same source (DESIGN.md UX方針).
     selectedToNode = null;
-    recordSlot = 'to';
+    ui.recordSlot = 'to';
     state.editLine = null;
     invalidateTxCache();
     render();
@@ -1343,13 +1350,13 @@ function wireRecord() {
 
 async function fetchTxPage(reset) {
   if (reset) {
-    txListRows = [];
+    cache.txListRows = [];
     txListOffset = 0;
     txListDone = false;
   }
-  const { from, to } = periodRange(txPeriod);
+  const { from, to } = periodRange(cache.txPeriod);
   const page = await listLines(supabase, { ascending: false, limit: TX_PAGE_SIZE, offset: txListOffset, from, to }, memoKey);
-  txListRows = txListRows.concat(page);
+  cache.txListRows = cache.txListRows.concat(page);
   txListOffset += page.length;
   if (page.length < TX_PAGE_SIZE) txListDone = true;
 }
@@ -1412,10 +1419,10 @@ async function renderTxListPage() {
   // (re)populates the nodesById cache other pages already rely on.
   await loadAllNodesWithPaths();
 
-  const period = txPeriod;
+  const period = cache.txPeriod;
   const search = (state.txSearch ?? '').trim().toLowerCase();
-  const filtered = filterTxRows(txListRows, search);
-  const total = txListRows.length;
+  const filtered = filterTxRows(cache.txListRows, search);
+  const total = cache.txListRows.length;
 
   const periodSelect = `
     <select id="tx-period-select" style="width:auto;padding:5px 8px;font-size:11.5px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
@@ -1463,7 +1470,7 @@ function wireTxList() {
   });
 
   document.getElementById('tx-period-select').addEventListener('change', async (e) => {
-    txPeriod = e.target.value;
+    cache.txPeriod = e.target.value;
     invalidateTxCache();
     await render();
   });
@@ -1480,7 +1487,7 @@ function wireTxList() {
 function renderTxRowsInPlace() {
   const search = (state.txSearch ?? '').trim().toLowerCase();
   const rowsEl = document.getElementById('tx-rows');
-  rowsEl.innerHTML = buildTxRows(filterTxRows(txListRows, search));
+  rowsEl.innerHTML = buildTxRows(filterTxRows(cache.txListRows, search));
   attachTxRowActions(rowsEl);
 }
 
@@ -1579,8 +1586,8 @@ async function renderNodesPage() {
 
   const viewToggle = `
     <div class="view-toggle">
-      <button type="button" id="view-list-btn" class="btn${nodeViewMode === 'list' ? ' selected' : ''}">リスト</button>
-      <button type="button" id="view-card-btn" class="btn${nodeViewMode === 'card' ? ' selected' : ''}">カード</button>
+      <button type="button" id="view-list-btn" class="btn${pref.nodeViewMode === 'list' ? ' selected' : ''}">リスト</button>
+      <button type="button" id="view-card-btn" class="btn${pref.nodeViewMode === 'card' ? ' selected' : ''}">カード</button>
     </div>
   `;
 
@@ -1599,7 +1606,7 @@ async function renderNodesPage() {
       </div>
   `;
 
-  if (nodeViewMode === 'card') {
+  if (pref.nodeViewMode === 'card') {
     // Color already distinguishes 資産/負債/収支, so card view mixes every
     // node into one grid (biggest balance first) instead of boxed sections.
     let allNodes = [...nodes].sort((a, b) =>
@@ -1691,13 +1698,13 @@ function wireNodesPage() {
   const listBtn = document.getElementById('view-list-btn');
   const cardBtn = document.getElementById('view-card-btn');
   listBtn.addEventListener('click', () => {
-    nodeViewMode = 'list';
-    localStorage.setItem('kakeibo:nodeViewMode', nodeViewMode);
+    pref.nodeViewMode = 'list';
+    localStorage.setItem('kakeibo:nodeViewMode', pref.nodeViewMode);
     render();
   });
   cardBtn.addEventListener('click', () => {
-    nodeViewMode = 'card';
-    localStorage.setItem('kakeibo:nodeViewMode', nodeViewMode);
+    pref.nodeViewMode = 'card';
+    localStorage.setItem('kakeibo:nodeViewMode', pref.nodeViewMode);
     render();
   });
 
@@ -1754,8 +1761,8 @@ async function renderDetailPage() {
   chartData = cumulative;
 
   const latestBalance = cumulative.length ? cumulative[cumulative.length - 1].cumulative_balance : 0;
-  const valueKey = chartMode === 'cumulative' ? 'cumulative_balance' : 'daily_delta';
-  const chartTitle = chartMode === 'cumulative' ? '残高推移（累積・日次）' : '増減（1日あたり）';
+  const valueKey = pref.chartMode === 'cumulative' ? 'cumulative_balance' : 'daily_delta';
+  const chartTitle = pref.chartMode === 'cumulative' ? '残高推移（累積・日次）' : '増減（1日あたり）';
   const chartMaxAbs = computeChartMaxAbs(chartData);
 
   const detailRows = lines.map((l) => `
@@ -1778,8 +1785,8 @@ async function renderDetailPage() {
         <p style="margin:0 0 18px;font-size:12px;color:var(--muted);">子孫を含む累計・全期間</p>
 
         <div class="chart-toggle">
-          <button type="button" id="chart-mode-cumulative" class="btn${chartMode === 'cumulative' ? ' selected' : ''}" style="${chartMode === 'cumulative' ? 'background:var(--text);color:var(--card);' : ''}">累積推移</button>
-          <button type="button" id="chart-mode-daily" class="btn${chartMode === 'daily' ? ' selected' : ''}" style="${chartMode === 'daily' ? 'background:var(--text);color:var(--card);' : ''}">1日あたり推移</button>
+          <button type="button" id="chart-mode-cumulative" class="btn${pref.chartMode === 'cumulative' ? ' selected' : ''}" style="${pref.chartMode === 'cumulative' ? 'background:var(--text);color:var(--card);' : ''}">累積推移</button>
+          <button type="button" id="chart-mode-daily" class="btn${pref.chartMode === 'daily' ? ' selected' : ''}" style="${pref.chartMode === 'daily' ? 'background:var(--text);color:var(--card);' : ''}">1日あたり推移</button>
         </div>
         <div style="font-size:11.5px;color:var(--faint);margin:12px 0 6px;">${chartTitle}</div>
         ${renderBarChartAxis(chartData, valueKey, chartMaxAbs, isNodeHidden(nodeId))}
@@ -1803,13 +1810,13 @@ function wireDetailPage() {
   if (barChartScroll) barChartScroll.scrollLeft = barChartScroll.scrollWidth;
 
   document.getElementById('chart-mode-cumulative').addEventListener('click', () => {
-    chartMode = 'cumulative';
-    localStorage.setItem('kakeibo:chartMode', chartMode);
+    pref.chartMode = 'cumulative';
+    localStorage.setItem('kakeibo:chartMode', pref.chartMode);
     render();
   });
   document.getElementById('chart-mode-daily').addEventListener('click', () => {
-    chartMode = 'daily';
-    localStorage.setItem('kakeibo:chartMode', chartMode);
+    pref.chartMode = 'daily';
+    localStorage.setItem('kakeibo:chartMode', pref.chartMode);
     render();
   });
 }
@@ -2040,7 +2047,6 @@ function wireManagerModal() {
 
 function renderSettingsPage() {
   const defaultFrom = localStorage.getItem('kakeibo:defaultFromNodeId') ?? '';
-  const displayName = localStorage.getItem('kakeibo:displayName') ?? '';
 
   return `
     <button type="button" class="back-link" data-go-back>← 戻る</button>
@@ -2049,8 +2055,6 @@ function renderSettingsPage() {
         <h1 style="margin-bottom:16px;">アカウント</h1>
         <div class="stack" style="gap:14px;">
           <label class="field">メールアドレス<input type="email" value="${esc(session?.user?.email ?? '')}" disabled></label>
-          <label class="field">表示名(この端末のみ)<input id="display-name" type="text" value="${esc(displayName)}"></label>
-          <button id="save-account-btn" class="btn" style="align-self:flex-start;">保存</button>
         </div>
       </section>
 
@@ -2071,8 +2075,8 @@ function renderSettingsPage() {
         <div class="row">
           <div><div>グラフの既定表示</div><div style="font-size:11.5px;color:var(--faint);">ノード詳細(この端末のみ)</div></div>
           <select id="default-chart-select" style="width:auto;padding:5px 10px;font-size:12.5px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
-            <option value="cumulative" ${chartMode === 'cumulative' ? 'selected' : ''}>累積推移</option>
-            <option value="daily" ${chartMode === 'daily' ? 'selected' : ''}>1日あたり推移</option>
+            <option value="cumulative" ${pref.chartMode === 'cumulative' ? 'selected' : ''}>累積推移</option>
+            <option value="daily" ${pref.chartMode === 'daily' ? 'selected' : ''}>1日あたり推移</option>
           </select>
         </div>
       </section>
@@ -2081,7 +2085,6 @@ function renderSettingsPage() {
         <h2 style="margin-bottom:10px;">データ</h2>
         <div class="stack" style="gap:8px;align-items:flex-start;">
           <button id="csv-export-btn" class="btn">取引をCSVで書き出す</button>
-          <button id="csv-import-btn" class="btn">取引をCSVで取り込む</button>
           <button id="node-csv-export-btn" class="btn">ノード構成をCSVで書き出す</button>
           <button id="settings-logout-btn" class="btn-danger-outline">ログアウト</button>
         </div>
@@ -2092,10 +2095,6 @@ function renderSettingsPage() {
 }
 
 async function wireSettingsPage() {
-  document.getElementById('save-account-btn').addEventListener('click', () => {
-    localStorage.setItem('kakeibo:displayName', document.getElementById('display-name').value);
-  });
-
   const leaves = await getLeafNodes(supabase);
   const currentDefault = localStorage.getItem('kakeibo:defaultFromNodeId') ?? '';
   const fromSelect = document.getElementById('default-from-select');
@@ -2103,12 +2102,11 @@ async function wireSettingsPage() {
   fromSelect.addEventListener('change', (e) => localStorage.setItem('kakeibo:defaultFromNodeId', e.target.value));
 
   document.getElementById('default-chart-select').addEventListener('change', (e) => {
-    chartMode = e.target.value;
-    localStorage.setItem('kakeibo:chartMode', chartMode);
+    pref.chartMode = e.target.value;
+    localStorage.setItem('kakeibo:chartMode', pref.chartMode);
   });
 
   document.getElementById('csv-export-btn').addEventListener('click', handleExportCsv);
-  document.getElementById('csv-import-btn').addEventListener('click', () => alert('準備中: CSVの取り込みは未実装です。'));
   document.getElementById('node-csv-export-btn').addEventListener('click', handleExportNodesCsv);
 
   document.getElementById('settings-logout-btn').addEventListener('click', handleLogout);
@@ -2225,7 +2223,7 @@ async function render() {
       wire = wireRecord;
       break;
     case 'tx':
-      if (txListRows.length === 0) await fetchTxPage(true);
+      if (cache.txListRows.length === 0) await fetchTxPage(true);
       pageHtml = await renderTxListPage();
       wire = wireTxList;
       break;
