@@ -289,6 +289,12 @@ let selectedToNode = null;
 const ui = {
   recordSlot: 'to',
   selectedFromNode: null,
+  // The state.editLine object the slots were last seeded from, so a
+  // re-render while editing (slot/chip clicks) keeps the user's picks
+  // instead of resetting them to the original line's nodes.
+  seededEditLine: null,
+  // 金額/日付/メモ as typed, carried across a picker re-render (consumed once).
+  recordDraft: null,
 };
 let editingLineId = null;
 // Leaf-node ids valid as a line endpoint, refreshed on every renderRecordPage
@@ -452,6 +458,8 @@ function go(page, extra = {}) {
   // a search query - doesn't leak into an unrelated later visit to the page.
   prevPage = state.page;
   state = { page, ...extra };
+  // Re-opening the same line for editing must start from its saved nodes.
+  ui.seededEditLine = null;
   render();
   window.scrollTo(0, 0);
 }
@@ -1150,11 +1158,15 @@ async function renderRecordPage() {
 
   if (editLine) {
     editingLineId = editLine.id;
-    ui.selectedFromNode = { id: editLine.from_node, name: editLine.from_name };
-    selectedToNode = { id: editLine.to_node, path: editLine.to_name };
-    ui.recordSlot = 'to';
+    if (ui.seededEditLine !== editLine) {
+      ui.seededEditLine = editLine;
+      ui.selectedFromNode = { id: editLine.from_node, name: editLine.from_name };
+      selectedToNode = { id: editLine.to_node, path: editLine.to_name };
+      ui.recordSlot = 'to';
+    }
   } else {
     editingLineId = null;
+    ui.seededEditLine = null;
     if (!ui.selectedFromNode) {
       // First visit this session: fall back to 設定's 既定の出どころ, else
       // just the first candidate. Once the user picks one, it persists
@@ -1178,6 +1190,12 @@ async function renderRecordPage() {
       return `<button type="button" class="chip${selected ? ' selected' : ''}" data-slot="to" data-id="${s.node_id}" data-path="${esc(s.path ?? '')}">${esc((s.path ?? s.node_id).split(' > ').pop())}</button>`;
     })
     .join('');
+
+  const draft = ui.recordDraft;
+  ui.recordDraft = null;
+  const amountValue = draft?.amount ?? editLine?.amount ?? '';
+  const occurredOnValue = draft?.occurredOn ?? editLine?.occurred_on ?? todayISODate();
+  const memoValue = draft?.memo ?? editLine?.memo ?? '';
 
   const isFromSlot = ui.recordSlot === 'from';
   const fromLabel = ui.selectedFromNode ? esc(ui.selectedFromNode.name) : '未選択';
@@ -1220,11 +1238,11 @@ async function renderRecordPage() {
           </div>
 
           <div class="grid-fit" style="grid-template-columns:1fr 1fr;">
-            <label class="field">金額<input id="amount" type="number" placeholder="0" value="${editLine?.amount ?? ''}" style="font-size:18px;" class="mono"></label>
-            <label class="field">日付<input id="occurred-on" type="date" value="${editLine?.occurred_on ?? todayISO}"></label>
+            <label class="field">金額<input id="amount" type="number" placeholder="0" value="${esc(String(amountValue))}" style="font-size:18px;" class="mono"></label>
+            <label class="field">日付<input id="occurred-on" type="date" value="${occurredOnValue}"></label>
           </div>
 
-          <label class="field">メモ<input id="memo" type="text" placeholder="任意" value="${esc(editLine?.memo ?? '')}"></label>
+          <label class="field">メモ<input id="memo" type="text" placeholder="任意" value="${esc(memoValue)}"></label>
 
           <div style="display:flex;gap:8px;">
             <button id="add-btn" class="btn-primary" style="flex:1;">${editingLineId ? '更新' : '登録'}</button>
@@ -1248,6 +1266,7 @@ async function renderRecordPage() {
 // to whichever slot is focused. Picking 出どころ auto-advances to 行き先
 // (the natural next step); picking 行き先 stays put since amount is next.
 function selectRecordCandidate(node) {
+  rememberRecordInputs();
   if (ui.recordSlot === 'from') {
     ui.selectedFromNode = node;
     ui.recordSlot = 'to';
@@ -1257,14 +1276,25 @@ function selectRecordCandidate(node) {
   render();
 }
 
+// Picker clicks re-render the whole page; keep what was typed so far.
+function rememberRecordInputs() {
+  ui.recordDraft = {
+    amount: document.getElementById('amount').value,
+    occurredOn: document.getElementById('occurred-on').value,
+    memo: document.getElementById('memo').value,
+  };
+}
+
 function wireRecord() {
   attachTxRowActions(document.getElementById('today-tx'));
 
   document.getElementById('from-slot-btn').addEventListener('click', () => {
+    rememberRecordInputs();
     ui.recordSlot = 'from';
     render();
   });
   document.getElementById('to-slot-btn').addEventListener('click', () => {
+    rememberRecordInputs();
     ui.recordSlot = 'to';
     render();
   });
