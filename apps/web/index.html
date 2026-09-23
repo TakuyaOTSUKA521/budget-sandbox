@@ -293,8 +293,14 @@ const ui = {
   // re-render while editing (slot/chip clicks) keeps the user's picks
   // instead of resetting them to the original line's nodes.
   seededEditLine: null,
-  // 金額/日付/メモ as typed, carried across a picker re-render (consumed once).
+  // Form values as typed, carried across a re-render (consumed once) - every
+  // render() rebuilds the whole DOM, so anything only in an <input> is lost
+  // otherwise (captureFormDrafts). Set resetRecordForm/resetManagerForm
+  // right before a render() that should start that form fresh instead.
   recordDraft: null,
+  managerDraft: null,
+  resetRecordForm: false,
+  resetManagerForm: false,
 };
 let editingLineId = null;
 // Leaf-node ids valid as a line endpoint, refreshed on every renderRecordPage
@@ -406,7 +412,10 @@ async function handleDeleteNode(nodeId) {
     return;
   }
 
-  if (managerEditNode?.id === nodeId) managerEditNode = null;
+  if (managerEditNode?.id === nodeId) {
+    managerEditNode = null;
+    ui.resetManagerForm = true;
+  }
   invalidateTxCache();
   await render();
 
@@ -460,6 +469,7 @@ function go(page, extra = {}) {
   state = { page, ...extra };
   // Re-opening the same line for editing must start from its saved nodes.
   ui.seededEditLine = null;
+  ui.resetRecordForm = true;
   render();
   window.scrollTo(0, 0);
 }
@@ -477,6 +487,7 @@ function openManager() {
   managerFrom = state.page === 'nodes' ? 'ノード一覧' : '記録';
   managerEditNode = null;
   managerPendingPromote = null;
+  ui.resetManagerForm = true;
   render();
 }
 
@@ -484,6 +495,7 @@ function closeManager() {
   managerOpen = false;
   managerEditNode = null;
   managerPendingPromote = null;
+  ui.resetManagerForm = true;
   render();
 }
 
@@ -624,7 +636,15 @@ function invalidateTxCache() {
 async function handleDeleteLine(lineId) {
   if (!confirm('この取引を削除しますか？')) return;
   await deleteLine(supabase, lineId);
-  if (editingLineId === lineId) editingLineId = null;
+  // renderRecordPage re-derives editingLineId from state.editLine, so that
+  // (not just editingLineId) must go, or the form stays in 更新 mode for a
+  // line that no longer exists.
+  if (state.editLine?.id === lineId) {
+    state.editLine = null;
+    selectedToNode = null;
+    ui.recordSlot = 'to';
+    ui.resetRecordForm = true;
+  }
   invalidateTxCache();
   await render();
 }
@@ -1266,7 +1286,6 @@ async function renderRecordPage() {
 // to whichever slot is focused. Picking 出どころ auto-advances to 行き先
 // (the natural next step); picking 行き先 stays put since amount is next.
 function selectRecordCandidate(node) {
-  rememberRecordInputs();
   if (ui.recordSlot === 'from') {
     ui.selectedFromNode = node;
     ui.recordSlot = 'to';
@@ -1276,25 +1295,14 @@ function selectRecordCandidate(node) {
   render();
 }
 
-// Picker clicks re-render the whole page; keep what was typed so far.
-function rememberRecordInputs() {
-  ui.recordDraft = {
-    amount: document.getElementById('amount').value,
-    occurredOn: document.getElementById('occurred-on').value,
-    memo: document.getElementById('memo').value,
-  };
-}
-
 function wireRecord() {
   attachTxRowActions(document.getElementById('today-tx'));
 
   document.getElementById('from-slot-btn').addEventListener('click', () => {
-    rememberRecordInputs();
     ui.recordSlot = 'from';
     render();
   });
   document.getElementById('to-slot-btn').addEventListener('click', () => {
-    rememberRecordInputs();
     ui.recordSlot = 'to';
     render();
   });
@@ -1329,6 +1337,7 @@ function wireRecord() {
     selectedToNode = null;
     ui.recordSlot = 'to';
     state.editLine = null;
+    ui.resetRecordForm = true;
     render();
   });
 
@@ -1369,6 +1378,7 @@ function wireRecord() {
     selectedToNode = null;
     ui.recordSlot = 'to';
     state.editLine = null;
+    ui.resetRecordForm = true;
     invalidateTxCache();
     render();
   });
@@ -1871,7 +1881,10 @@ async function renderManagerModal() {
     ? new Set(nodes.filter((n) => n.id === editNode.id || n.path.startsWith(`${editNode.path} > `)).map((n) => n.id))
     : new Set();
 
-  const selectedParentId = pending?.parentId ?? (editNode ? (editNode.parent_id ?? '') : '');
+  const draft = ui.managerDraft;
+  ui.managerDraft = null;
+
+  const selectedParentId = draft ? (draft.parentId ?? '') : pending?.parentId ?? (editNode ? (editNode.parent_id ?? '') : '');
   const parentOptions = ['<option value="">なし（ルートノード）</option>']
     .concat(
       nodes
@@ -1881,7 +1894,13 @@ async function renderManagerModal() {
     .join('');
 
   const parentNode = pending ? nodesById.get(pending.parentId) : null;
-  const selectedNodeType = pending ? parentNode?.node_type : editNode?.node_type;
+  // Type follows the chosen parent (and is locked to it), same as the
+  // parent-select change handler does live; locked to itself while editing.
+  const typeParent = nodesById.get(selectedParentId);
+  const typeLocked = Boolean(editNode || typeParent);
+  const selectedNodeType = editNode?.node_type ?? typeParent?.node_type ?? draft?.nodeType ?? 'flow';
+  const nameValue = draft?.name ?? pending?.name ?? editNode?.name ?? '';
+  const excludeChecked = draft?.excludeFromFlowTotals ?? pending?.excludeFromFlowTotals ?? editNode?.exclude_from_flow_totals ?? false;
 
   const confirmBox = pending ? `
     <div class="confirm-box">
@@ -1923,16 +1942,16 @@ async function renderManagerModal() {
           <h1 style="font-size:14px;">${editNode ? `ノードを編集：${esc(editNode.name)}` : '新しいノード'}</h1>
           <label class="field">親ノード<select id="node-parent-select">${parentOptions}</select></label>
           <label class="field">種別
-            <select id="node-type-select" ${editNode ? 'disabled' : ''}>
-              <option value="flow" ${selectedNodeType === 'flow' || !pending && !editNode ? 'selected' : ''}>flow（支出・収入先）</option>
+            <select id="node-type-select" ${typeLocked ? 'disabled' : ''}>
+              <option value="flow" ${selectedNodeType === 'flow' ? 'selected' : ''}>flow（支出・収入先）</option>
               <option value="asset" ${selectedNodeType === 'asset' ? 'selected' : ''}>asset（資産）</option>
               <option value="liability" ${selectedNodeType === 'liability' ? 'selected' : ''}>liability（負債）</option>
             </select>
           </label>
-          <label class="field">ノード名<input id="node-name" type="text" placeholder="例: マクドナルド" value="${esc(pending?.name ?? editNode?.name ?? '')}"></label>
+          <label class="field">ノード名<input id="node-name" type="text" placeholder="例: マクドナルド" value="${esc(nameValue)}"></label>
           <label class="field" id="node-exclude-flow-field" style="${selectedNodeType === 'flow' ? '' : 'display:none;'}">
             <span style="display:flex;align-items:flex-start;gap:8px;font-weight:400;">
-              <input type="checkbox" id="node-exclude-flow" style="flex:0 0 auto;margin-top:3px;" ${editNode?.exclude_from_flow_totals ? 'checked' : ''}>
+              <input type="checkbox" id="node-exclude-flow" style="flex:0 0 auto;margin-top:3px;" ${excludeChecked ? 'checked' : ''}>
               <span style="flex:1;">収支の集計・構成比から除外する(初期残高など)</span>
             </span>
           </label>
@@ -2003,8 +2022,8 @@ function wireManagerModal() {
     } catch (error) {
       if (parentId && error.message.includes('promote_to_parent')) {
         managerPendingPromote = editNode
-          ? { action: 'move', nodeId: editNode.id, parentId, name }
-          : { action: 'create', parentId, nodeType, name };
+          ? { action: 'move', nodeId: editNode.id, parentId, name, excludeFromFlowTotals }
+          : { action: 'create', parentId, nodeType, name, excludeFromFlowTotals };
         render();
         return;
       }
@@ -2016,6 +2035,7 @@ function wireManagerModal() {
     // doesn't mean reopening the modal each time.
     managerPendingPromote = null;
     managerEditNode = null;
+    ui.resetManagerForm = true;
     render();
   });
 
@@ -2026,10 +2046,10 @@ function wireManagerModal() {
       try {
         await promoteToParent(supabase, pending.parentId);
         if (pending.action === 'move') {
-          await updateNode(supabase, pending.nodeId, { name: pending.name, parentId: pending.parentId });
+          await updateNode(supabase, pending.nodeId, { name: pending.name, parentId: pending.parentId, excludeFromFlowTotals: pending.excludeFromFlowTotals });
         } else {
           const { data: { user } } = await supabase.auth.getUser();
-          await createNode(supabase, { userId: user.id, name: pending.name, parentId: pending.parentId, nodeType: pending.nodeType });
+          await createNode(supabase, { userId: user.id, name: pending.name, parentId: pending.parentId, nodeType: pending.nodeType, excludeFromFlowTotals: pending.excludeFromFlowTotals });
         }
       } catch (error) {
         document.getElementById('node-create-error').textContent = error.message;
@@ -2037,6 +2057,7 @@ function wireManagerModal() {
       }
       managerPendingPromote = null;
       managerEditNode = null;
+      ui.resetManagerForm = true;
       render();
     });
   }
@@ -2054,6 +2075,7 @@ function wireManagerModal() {
     cancelEditBtn.addEventListener('click', () => {
       managerEditNode = null;
       managerPendingPromote = null;
+      ui.resetManagerForm = true;
       render();
     });
   }
@@ -2062,6 +2084,7 @@ function wireManagerModal() {
     btn.addEventListener('click', () => {
       managerEditNode = nodesById.get(btn.dataset.id);
       managerPendingPromote = null;
+      ui.resetManagerForm = true;
       render();
     });
   });
@@ -2237,7 +2260,31 @@ async function handleExportNodesCsv() {
 // Router / top-level render
 // ============================================================
 
+// Snapshots the record/manager forms still in the DOM before render()
+// replaces it, so any re-render (tree ▸, 🙈, opening ノード管理 over 記録,
+// picker clicks, ...) keeps what the user typed. Skipped per form when a
+// handler flagged it to start fresh.
+function captureFormDrafts() {
+  const amountEl = document.getElementById('amount');
+  ui.recordDraft = !ui.resetRecordForm && amountEl ? {
+    amount: amountEl.value,
+    occurredOn: document.getElementById('occurred-on').value,
+    memo: document.getElementById('memo').value,
+  } : null;
+  ui.resetRecordForm = false;
+
+  const nodeNameEl = document.getElementById('node-name');
+  ui.managerDraft = !ui.resetManagerForm && nodeNameEl ? {
+    name: nodeNameEl.value,
+    parentId: document.getElementById('node-parent-select').value || null,
+    nodeType: document.getElementById('node-type-select').value,
+    excludeFromFlowTotals: document.getElementById('node-exclude-flow').checked,
+  } : null;
+  ui.resetManagerForm = false;
+}
+
 async function render() {
+  captureFormDrafts();
   if (!session) {
     root.innerHTML = renderSummerDecor() + renderLoginPage();
     wireLogin();
