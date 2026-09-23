@@ -200,6 +200,7 @@
      (葉ノードだけがひと目でそれと分かるよう、葉側の見た目は変えない)。 */
   .node-card--group { border-left-style: dashed; background: var(--bg); }
   .node-card--group .name { color: var(--muted); }
+  .badge-excluded { font-size: 9.5px; font-weight: 600; color: var(--muted); background: var(--row-border); border-radius: 4px; padding: 1px 5px; margin-left: 6px; white-space: nowrap; }
   .badge-group { font-size: 9px; font-weight: 600; letter-spacing: 0.02em; color: var(--muted); background: var(--row-border); border-radius: 4px; padding: 1px 5px; }
 
   .bar-chart-scroll { overflow-x: auto; overflow-y: hidden; min-width: 0; }
@@ -594,13 +595,17 @@ function renderNodeTree(list, rowRenderer) {
 // Shared transaction-row rendering (used by 記録/取引一覧/ノード詳細)
 // ============================================================
 
+// Marks a line flagged lines.exclude_from_flow_totals - it still moves every
+// balance, so the row stays in each list; only 収支 totals leave it out.
+const excludedBadge = (l) => (l.exclude_from_flow_totals ? '<span class="badge-excluded" title="収支の集計・構成比から除外されています(残高には含まれます)">集計外</span>' : '');
+
 function renderTxRow(l) {
   linesById.set(l.id, l);
   return `
     <div class="row">
       <span class="row-date mono">${l.occurred_on}</span>
       <div class="row-main">
-        <div>${esc(l.from_name)} → ${esc(l.to_name)}</div>
+        <div>${esc(l.from_name)} → ${esc(l.to_name)}${excludedBadge(l)}</div>
         ${l.memo ? `<div class="row-memo">${esc(l.memo)}</div>` : ''}
       </div>
       <span class="mono">${yen(l.amount)}</span>
@@ -869,7 +874,7 @@ async function renderDashboardPage() {
 
   const spendPeriod = state.spendPeriod ?? 'month';
   const { from: spendFrom, to: spendTo } = periodRange(spendPeriod);
-  const spendDeltas = await getDailyDeltas(supabase, { from: spendFrom, to: spendTo });
+  const spendDeltas = await getDailyDeltas(supabase, { from: spendFrom, to: spendTo, flowTotalsOnly: true });
   const periodBalanceByNodeId = new Map();
   spendDeltas.forEach((d) => {
     periodBalanceByNodeId.set(d.node_id, (periodBalanceByNodeId.get(d.node_id) ?? 0) + Number(d.delta));
@@ -1077,70 +1082,108 @@ function compositionSection(title, entries, subtitle = '') {
   `;
 }
 
+// 構成比は「収支」(期間で絞り込む支出/収入)と「資産」(常に現在残高の資産/負債)
+// の2ビューに分ける。期間セレクタは収支ビューにだけ出す - 資産側の数値は期間に
+// よって変わらないので、同じ画面に並べるとセレクタが効いているように誤読される。
+// state.analysisView は go() でリセットされ、ヘッダの「構成比」からは常に収支で開く。
 async function renderAnalysisPage() {
+  const view = state.analysisView ?? 'flow';
   const nodes = await loadAllNodesWithPaths();
-  const rootFlowNodes = nodes.filter((n) => n.node_type === 'flow' && !n.parent_id && !n.exclude_from_flow_totals);
-  const rootAssetNodes = nodes.filter((n) => n.node_type === 'asset' && !n.parent_id);
-  const rootLiabilityNodes = nodes.filter((n) => n.node_type === 'liability' && !n.parent_id);
 
-  const period = state.analysisPeriod ?? 'month';
-  const { from, to } = periodRange(period);
-
-  const [flowRows, balances] = await Promise.all([
-    getCumulativeForNodes(supabase, rootFlowNodes.map((n) => n.id), { from, to }),
-    getRollupBalances(supabase)
-  ]);
-
-  const deltaByNodeId = new Map();
-  flowRows.forEach((r) => deltaByNodeId.set(r.node_id, (deltaByNodeId.get(r.node_id) ?? 0) + Number(r.daily_delta)));
-  const balanceByNodeId = new Map(balances.map((b) => [b.node_id, Number(b.balance)]));
-
-  const spendEntries = rootFlowNodes
-    .map((n) => ({ node: n, amount: deltaByNodeId.get(n.id) ?? 0 }))
-    .filter((e) => e.amount > 0)
-    .sort((a, b) => b.amount - a.amount);
-  const incomeEntries = rootFlowNodes
-    .map((n) => ({ node: n, amount: -(deltaByNodeId.get(n.id) ?? 0) }))
-    .filter((e) => e.amount > 0)
-    .sort((a, b) => b.amount - a.amount);
-  // Kept even when amount <= 0 (e.g. an asset node that has gone negative,
-  // or a liability node that has gone positive) so this section's total
-  // still matches v_net_worth exactly - compositionSection excludes these
-  // from the donut but keeps them in the legend and the total.
-  const assetEntries = rootAssetNodes
-    .map((n) => ({ node: n, amount: balanceByNodeId.get(n.id) ?? 0 }))
-    .sort((a, b) => b.amount - a.amount);
-  const liabilityEntries = rootLiabilityNodes
-    .map((n) => ({ node: n, amount: -(balanceByNodeId.get(n.id) ?? 0) }))
-    .sort((a, b) => b.amount - a.amount);
-
-  const periodSelect = `
-    <select id="analysis-period-select" style="width:auto;padding:5px 8px;font-size:11.5px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
-      ${Object.entries(SPEND_PERIODS).map(([value, label]) => `<option value="${value}" ${period === value ? 'selected' : ''}>${label}</option>`).join('')}
-    </select>
+  const viewToggle = `
+    <div class="view-toggle">
+      <button type="button" id="analysis-view-flow-btn" class="btn${view === 'flow' ? ' selected' : ''}">収支</button>
+      <button type="button" id="analysis-view-balance-btn" class="btn${view === 'balance' ? ' selected' : ''}">資産</button>
+    </div>
   `;
+
+  let controls = '';
+  let note = '';
+  let sections = '';
+
+  if (view === 'flow') {
+    const rootFlowNodes = nodes.filter((n) => n.node_type === 'flow' && !n.parent_id && !n.exclude_from_flow_totals);
+    const period = state.analysisPeriod ?? 'month';
+    const { from, to } = periodRange(period);
+
+    const flowRows = await getCumulativeForNodes(supabase, rootFlowNodes.map((n) => n.id), { from, to });
+    const deltaByNodeId = new Map();
+    // flow_daily_delta, not daily_delta: lines flagged 集計から除外 stay out of 収支.
+    flowRows.forEach((r) => deltaByNodeId.set(r.node_id, (deltaByNodeId.get(r.node_id) ?? 0) + Number(r.flow_daily_delta)));
+
+    const spendEntries = rootFlowNodes
+      .map((n) => ({ node: n, amount: deltaByNodeId.get(n.id) ?? 0 }))
+      .filter((e) => e.amount > 0)
+      .sort((a, b) => b.amount - a.amount);
+    const incomeEntries = rootFlowNodes
+      .map((n) => ({ node: n, amount: -(deltaByNodeId.get(n.id) ?? 0) }))
+      .filter((e) => e.amount > 0)
+      .sort((a, b) => b.amount - a.amount);
+
+    controls = `
+      <select id="analysis-period-select" style="width:auto;padding:5px 8px;font-size:11.5px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
+        ${Object.entries(SPEND_PERIODS).map(([value, label]) => `<option value="${value}" ${period === value ? 'selected' : ''}>${label}</option>`).join('')}
+      </select>
+    `;
+    note = '対象はルート直下の支出・収入ノードのみ(子ノードの内訳は合算)。「収支の集計から除外」設定のノード(初期残高など)は含みません。';
+    sections = `
+      ${compositionSection('支出構成比', spendEntries, `${SPEND_PERIODS[period]}の増減`)}
+      ${compositionSection('収入構成比', incomeEntries, `${SPEND_PERIODS[period]}の増減`)}
+    `;
+  } else {
+    const rootAssetNodes = nodes.filter((n) => n.node_type === 'asset' && !n.parent_id);
+    const rootLiabilityNodes = nodes.filter((n) => n.node_type === 'liability' && !n.parent_id);
+
+    const balances = await getRollupBalances(supabase);
+    const balanceByNodeId = new Map(balances.map((b) => [b.node_id, Number(b.balance)]));
+
+    // Kept even when amount <= 0 (e.g. an asset node that has gone negative,
+    // or a liability node that has gone positive) so this section's total
+    // still matches v_net_worth exactly - compositionSection excludes these
+    // from the donut but keeps them in the legend and the total.
+    const assetEntries = rootAssetNodes
+      .map((n) => ({ node: n, amount: balanceByNodeId.get(n.id) ?? 0 }))
+      .sort((a, b) => b.amount - a.amount);
+    const liabilityEntries = rootLiabilityNodes
+      .map((n) => ({ node: n, amount: -(balanceByNodeId.get(n.id) ?? 0) }))
+      .sort((a, b) => b.amount - a.amount);
+
+    note = '対象はルート直下の資産・負債ノードのみ(子ノードの内訳は合算)。常に現在の残高を表示します。';
+    sections = `
+      ${compositionSection('純資産構成比（資産）', assetEntries, '現在の残高')}
+      ${liabilityEntries.length ? compositionSection('純資産構成比（負債）', liabilityEntries, '現在の残高') : ''}
+    `;
+  }
 
   return `
     <button type="button" class="back-link" data-go-back>← 戻る</button>
+    <div style="display:flex;justify-content:center;margin-bottom:12px;">
+      ${viewToggle}
+    </div>
     <div class="card-head">
       <h1>構成比</h1>
-      ${periodSelect}
+      ${controls}
     </div>
     <p style="margin:6px 0 0;font-size:11.5px;color:var(--faint);line-height:1.7;">
-      対象はルート直下の支出・収入・資産・負債ノードのみ(子ノードの内訳は合算)。「収支の集計から除外」設定のノード(初期残高など)は含みません。
+      ${note}
       円グラフにカーソルを合わせると、そのノードの金額と割合を表示します。
     </p>
     <div class="grid-fit-320" style="margin-top:12px;">
-      ${compositionSection('支出構成比', spendEntries, `${SPEND_PERIODS[period]}の増減`)}
-      ${compositionSection('収入構成比', incomeEntries, `${SPEND_PERIODS[period]}の増減`)}
-      ${compositionSection('純資産構成比（資産）', assetEntries, '現在の残高(期間指定の影響を受けません)')}
-      ${liabilityEntries.length ? compositionSection('純資産構成比（負債）', liabilityEntries, '現在の残高(期間指定の影響を受けません)') : ''}
+      ${sections}
     </div>
   `;
 }
 
 function wireAnalysisPage() {
-  document.getElementById('analysis-period-select').addEventListener('change', (e) => {
+  document.getElementById('analysis-view-flow-btn').addEventListener('click', () => {
+    state.analysisView = 'flow';
+    render();
+  });
+  document.getElementById('analysis-view-balance-btn').addEventListener('click', () => {
+    state.analysisView = 'balance';
+    render();
+  });
+  document.getElementById('analysis-period-select')?.addEventListener('change', (e) => {
     state.analysisPeriod = e.target.value;
     render();
   });
@@ -1217,6 +1260,13 @@ async function renderRecordPage() {
   const occurredOnValue = draft?.occurredOn ?? editLine?.occurred_on ?? todayISODate();
   const memoValue = draft?.memo ?? editLine?.memo ?? '';
 
+  // 集計から除外 only means something when one endpoint is a flow node (the DB
+  // rejects it otherwise - see DESIGN.md 仕訳パターン「集計から除外する取引」),
+  // so the checkbox is disabled, not hidden, until such a node is picked.
+  const nodeTypeOf = (id) => leafNodes.find((n) => n.id === id)?.node_type ?? nodesById.get(id)?.node_type;
+  const hasFlowEndpoint = [ui.selectedFromNode?.id, selectedToNode?.id].some((id) => id && nodeTypeOf(id) === 'flow');
+  const excludeChecked = hasFlowEndpoint && (draft?.excludeFromFlowTotals ?? editLine?.exclude_from_flow_totals ?? false);
+
   const isFromSlot = ui.recordSlot === 'from';
   const fromLabel = ui.selectedFromNode ? esc(ui.selectedFromNode.name) : '未選択';
   const toLabel = selectedToNode ? esc((selectedToNode.path ?? selectedToNode.id).split(' > ').pop()) : '未選択';
@@ -1263,6 +1313,17 @@ async function renderRecordPage() {
           </div>
 
           <label class="field">メモ<input id="memo" type="text" placeholder="任意" value="${esc(memoValue)}"></label>
+
+          <label class="field">
+            <span style="display:flex;align-items:flex-start;gap:8px;font-weight:400;${hasFlowEndpoint ? '' : 'color:var(--faint);'}">
+              <input type="checkbox" id="exclude-from-flow" style="flex:0 0 auto;margin-top:3px;" ${excludeChecked ? 'checked' : ''} ${hasFlowEndpoint ? '' : 'disabled'}>
+              <span style="flex:1;">収支の集計・構成比から除外する
+                <span style="display:block;font-size:11px;color:var(--faint);line-height:1.6;">${hasFlowEndpoint
+                  ? '残高は明細どおり動きます。全額が自分の収支でない取引(代わりに払っただけ等)に使います。割り勘は自分の分と立て替えに分けて記録してください。'
+                  : '出どころか行き先に支出・収入ノードを選ぶと指定できます(資産・負債どうしの取引はもともと収支に入りません)。'}</span>
+              </span>
+            </span>
+          </label>
 
           <div style="display:flex;gap:8px;">
             <button id="add-btn" class="btn-primary" style="flex:1;">${editingLineId ? '更新' : '登録'}</button>
@@ -1359,13 +1420,15 @@ function wireRecord() {
     const amount = Number(document.getElementById('amount').value);
     const memo = document.getElementById('memo').value;
     const occurredOn = document.getElementById('occurred-on').value;
+    const excludeEl = document.getElementById('exclude-from-flow');
+    const excludeFromFlowTotals = !excludeEl.disabled && excludeEl.checked;
 
     try {
       if (editingLineId) {
-        await reviseLine(supabase, editingLineId, { occurredOn, fromNode, toNode, amount, memo }, memoKey);
+        await reviseLine(supabase, editingLineId, { occurredOn, fromNode, toNode, amount, memo, excludeFromFlowTotals }, memoKey);
       } else {
         const { data: { user } } = await supabase.auth.getUser();
-        await recordLine(supabase, { userId: user.id, occurredOn, fromNode, toNode, amount, memo }, memoKey);
+        await recordLine(supabase, { userId: user.id, occurredOn, fromNode, toNode, amount, memo, excludeFromFlowTotals }, memoKey);
       }
     } catch (error) {
       errorEl.textContent = error.message;
@@ -1607,9 +1670,23 @@ async function renderNodesPage() {
     listNodesWithPaths(supabase, { includeArchived: true }),
     getRollupBalances(supabase)
   ]);
-  const balanceByNodeId = new Map(balances.map((b) => [b.node_id, b.balance]));
   const nodes = allNodesRaw.filter((n) => !n.is_archived);
   const archivedNodesList = allNodesRaw.filter((n) => n.is_archived);
+
+  // 期間セレクタは flow ノードにだけ効く(構成比の収支/資産と同じ分け方):
+  // 資産・負債は常に現在残高、支出・収入は選んだ期間の子孫込みの増減。
+  // 全期間なら v_rollup_balances がそのまま累計なので追加の取得はしない。
+  // 期間内の増減は構成比と同じく v_cumulative の daily_delta を合計するだけ。
+  const period = state.nodesPeriod ?? 'all';
+  const balanceByNodeId = new Map(balances.map((b) => [b.node_id, b.balance]));
+  if (period !== 'all') {
+    const { from, to } = periodRange(period);
+    const flowIds = nodes.filter((n) => n.node_type === 'flow').map((n) => n.id);
+    const flowRows = await getCumulativeForNodes(supabase, flowIds, { from, to });
+    flowIds.forEach((id) => balanceByNodeId.set(id, 0));
+    flowRows.forEach((r) => balanceByNodeId.set(r.node_id, balanceByNodeId.get(r.node_id) + Number(r.daily_delta)));
+  }
+  const flowAmountLabel = period === 'all' ? '子孫を含む累計' : `${SPEND_PERIODS[period]}の増減(子孫を含む)`;
 
   // Archiving is only offered for leaf nodes: hiding an intermediate node
   // would orphan its children from the flow tree / section it belongs to.
@@ -1643,6 +1720,9 @@ async function renderNodesPage() {
       <div style="display:flex;gap:8px;align-items:center;">
         <button type="button" id="toggle-archived-btn" class="btn">${showArchivedNodes ? 'アーカイブ済みを隠す' : 'アーカイブ済みを表示'}</button>
         ${viewToggle}
+        <select id="nodes-period-select" style="width:auto;padding:5px 8px;font-size:11.5px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
+          ${Object.entries(SPEND_PERIODS).map(([value, label]) => `<option value="${value}" ${period === value ? 'selected' : ''}>${label}</option>`).join('')}
+        </select>
       </div>
   `;
 
@@ -1675,7 +1755,7 @@ async function renderNodesPage() {
     `;
 
     return `
-      ${pageHead('残高の推移(折れ線)・大きさ順に並んでいます。色は資産/負債/収支。子ノードを持つカードは破線で「内訳(合計)」と表示されます。')}
+      ${pageHead(`残高の推移(折れ線)・大きさ順に並んでいます。色は資産/負債/収支。子ノードを持つカードは破線で「内訳(合計)」と表示されます。金額は資産・負債が現在残高、収支が${flowAmountLabel}です。`)}
         <div style="display:flex;gap:8px;align-items:center;margin-top:-4px;">
           <span style="font-size:11.5px;color:var(--faint);">表示するノード</span>
           ${cardFilterToggle}
@@ -1715,7 +1795,7 @@ async function renderNodesPage() {
   const spendRows = spendingDestinations.map((n) => nodeRow(balanceByNodeId, n, 0, canArchive(n))).join('');
 
   return `
-    ${pageHead('資産・負債は現在残高、支出・収入は子孫を含む累計です。子を持つ行は▸で展開できます。')}
+    ${pageHead(`資産・負債は現在残高、支出・収入は${flowAmountLabel}です(期間の選択は支出・収入にのみ効きます)。子を持つ行は▸で展開できます。`)}
       <div class="grid-fit-300">
         ${hierarchySection('資産', '財布・銀行・電子マネーなど', byType.asset)}
         ${hierarchySection('負債', '未払いのクレジット残など', byType.liability, 'color:var(--negative);')}
@@ -1724,10 +1804,10 @@ async function renderNodesPage() {
             <h3>消費相手（多い順）</h3>
             <span class="mono" style="font-size:12.5px;color:var(--negative);">${yen(spendTotal)}</span>
           </div>
-          <p class="card-note">flow の葉ノード・残高が正のもの</p>
+          <p class="card-note">flow の葉ノード・${period === 'all' ? '残高' : `${SPEND_PERIODS[period]}の増減`}が正のもの</p>
           ${spendRows || '<p style="font-size:12.5px;color:var(--faint);">記録がありません</p>'}
         </section>
-        ${hierarchySection('支出・収入（階層）', '子孫を含む累計', byType.flow)}
+        ${hierarchySection('支出・収入（階層）', flowAmountLabel, byType.flow)}
         ${archivedSection}
       </div>
     </div>
@@ -1750,6 +1830,11 @@ function wireNodesPage() {
 
   document.getElementById('toggle-archived-btn').addEventListener('click', () => {
     showArchivedNodes = !showArchivedNodes;
+    render();
+  });
+
+  document.getElementById('nodes-period-select').addEventListener('change', (e) => {
+    state.nodesPeriod = e.target.value;
     render();
   });
 
@@ -1808,7 +1893,7 @@ async function renderDetailPage() {
   const detailRows = lines.map((l) => `
     <div class="row">
       <span class="row-date mono">${l.occurred_on}</span>
-      <span class="row-main">${esc(l.from_name)} → ${esc(l.to_name)}${l.memo ? ` <span class="row-memo">${esc(l.memo)}</span>` : ''}</span>
+      <span class="row-main">${esc(l.from_name)} → ${esc(l.to_name)}${excludedBadge(l)}${l.memo ? ` <span class="row-memo">${esc(l.memo)}</span>` : ''}</span>
       <span class="mono">${yen(l.amount)}</span>
     </div>
   `).join('') || '<p style="font-size:13px;color:var(--faint);">記録がありません</p>';
@@ -2270,6 +2355,7 @@ function captureFormDrafts() {
     amount: amountEl.value,
     occurredOn: document.getElementById('occurred-on').value,
     memo: document.getElementById('memo').value,
+    excludeFromFlowTotals: document.getElementById('exclude-from-flow').checked,
   } : null;
   ui.resetRecordForm = false;
 

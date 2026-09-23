@@ -8,7 +8,10 @@
 
 import { encryptMemo } from './crypto.js';
 
-export async function recordLine(supabase, { userId, occurredOn, fromNode, toNode, amount, memo = null }, memoKey) {
+// `excludeFromFlowTotals` keeps the line in every balance but drops its flow
+// side from 収支 totals/構成比 (DESIGN.md 仕訳パターン「集計から除外する取引」).
+// The DB rejects it unless at least one endpoint is a flow node.
+export async function recordLine(supabase, { userId, occurredOn, fromNode, toNode, amount, memo = null, excludeFromFlowTotals = false }, memoKey) {
     const { data, error } = await supabase
         .from('lines')
         .insert({
@@ -17,7 +20,8 @@ export async function recordLine(supabase, { userId, occurredOn, fromNode, toNod
             from_node: fromNode,
             to_node: toNode,
             amount,
-            memo: await encryptMemo(memoKey, memo)
+            memo: await encryptMemo(memoKey, memo),
+            exclude_from_flow_totals: excludeFromFlowTotals
         })
         .select()
         .single();
@@ -79,6 +83,7 @@ export async function reviseLine(supabase, lineId, patch, memoKey) {
             to_node: patch.toNode ?? original.to_node,
             amount: patch.amount ?? original.amount,
             memo,
+            exclude_from_flow_totals: patch.excludeFromFlowTotals ?? original.exclude_from_flow_totals,
             version_of: superseded.id
         })
         .select()

@@ -18,8 +18,11 @@ export async function listLines(supabase, { ascending = true, limit, offset = 0,
     return withDecryptedMemo(data, memoKey);
 }
 
-export async function getDailyDeltas(supabase, { from, to } = {}) {
+// `flowTotalsOnly` drops deltas of lines excluded from 収支 totals
+// (lines.exclude_from_flow_totals) - for spend/income breakdowns, not balances.
+export async function getDailyDeltas(supabase, { from, to, flowTotalsOnly = false } = {}) {
     let query = supabase.from('v_daily_deltas').select('*');
+    if (flowTotalsOnly) query = query.eq('counts_in_flow_totals', true);
     if (from) query = query.gte('occurred_on', from);
     if (to) query = query.lte('occurred_on', to);
 
@@ -73,6 +76,8 @@ export async function getCumulative(supabase, nodeId) {
 // ratio breakdowns) without writing a GROUP BY in the caller: each node's
 // `daily_delta` already includes its descendants (see v_cumulative), so the
 // caller only has to sum `daily_delta` per node_id across the returned rows.
+// Sum `flow_daily_delta` instead for 収支 figures - it leaves out lines
+// flagged exclude_from_flow_totals, while `daily_delta` is the plain ledger.
 export async function getCumulativeForNodes(supabase, nodeIds, { from, to } = {}) {
     if (nodeIds.length === 0) return [];
 

@@ -10,7 +10,7 @@ try {
     const lines = await listLines(supabase, { ascending: true }, memoKey);
     lines.forEach((l) => {
         console.log(
-            `${l.occurred_on} | ${l.from_name.padEnd(10)} -> ${l.to_name.padEnd(10)} | ${String(l.amount).padStart(8)} | ${l.memo ?? ''}`
+            `${l.occurred_on} | ${l.from_name.padEnd(10)} -> ${l.to_name.padEnd(10)} | ${String(l.amount).padStart(8)} | ${l.exclude_from_flow_totals ? '[集計外] ' : ''}${l.memo ?? ''}`
         );
     });
 } catch (error) {

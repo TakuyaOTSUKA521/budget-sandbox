@@ -97,6 +97,7 @@ export type Database = {
       lines: {
         Row: {
           amount: number
+          exclude_from_flow_totals: boolean
           from_node: string
           id: string
           memo: string | null
@@ -109,6 +110,7 @@ export type Database = {
         }
         Insert: {
           amount: number
+          exclude_from_flow_totals?: boolean
           from_node: string
           id?: string
           memo?: string | null
@@ -121,6 +123,7 @@ export type Database = {
         }
         Update: {
           amount?: number
+          exclude_from_flow_totals?: boolean
           from_node?: string
           id?: string
           memo?: string | null
@@ -247,6 +250,7 @@ export type Database = {
         Row: {
           cumulative_balance: number | null
           daily_delta: number | null
+          flow_daily_delta: number | null
           node_id: string | null
           occurred_on: string | null
           user_id: string | null
@@ -255,6 +259,7 @@ export type Database = {
       }
       v_daily_deltas: {
         Row: {
+          counts_in_flow_totals: boolean | null
           delta: number | null
           node_id: string | null
           occurred_on: string | null
@@ -265,6 +270,7 @@ export type Database = {
       v_lines: {
         Row: {
           amount: number | null
+          exclude_from_flow_totals: boolean | null
           from_name: string | null
           from_node: string | null
           id: string | null
