@@ -63,7 +63,7 @@
 合計には引き続き含まれる)。
 
 例外は「親を持たない(ルート)flow ノード」をアーカイブした場合。この場合そのノード
-は構成比解析(apps/web の renderAnalysisPage、`listNodesWithPaths` の既定で
+は構成比解析(apps/web/views/composition.js の renderAnalysisPage、`listNodesWithPaths` の既定で
 is_archived を除外)からルート候補として選ばれなくなり、他に合算先の親も無いため
 その取引は構成比の集計から消える。`v_monthly_flow`(dashboard の今月の支出/収入)
 もこれに揃え、`WHERE NOT (is_archived AND parent_id IS NULL)` を条件に含める
@@ -557,7 +557,7 @@ RLS が拒否する。ここが崩れると全データが他人から見える�
 **これが守るのは「Supabase ダッシュボード(Table Editor/SQL Editor)から平文の
 memo を読まれること」だけ**であり、下記は守らない。
 
-- 暗号鍵はアプリのソース(`apps/web/index.html`)に埋め込まれた固定の公開値。
+- 暗号鍵はアプリのソース(`apps/web/lib/supabase.js`)に埋め込まれた固定の公開値。
   ユーザーごとの鍵ではない
 - RLS が破られた場合や、`service_role` キーが漏れた場合には無力
 - 「本人のブラウザで本人の memo を暗号化している」だけなので、

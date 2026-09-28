@@ -34,11 +34,25 @@ Vibe Coding(Claude Codeによる継続的な機能追加)で起きがちな劣�
   `selectedToNode` / `editingLineId` / `managerOpen` / `managerFrom` /
   `managerEditNode` / `managerPendingPromote`(ui.*寄りだが数クリックより長寿命)
 
+2026-09-28のファイル分割(§3)で、これらの未分類変数は名前を変えずに置き場所だけ
+移した。リネーム時はこの対応を起点にする:
+
+- `apps/web/state.js`(複数ファイルから参照・再代入されるもの): `session` /
+  `state` / `selectedToNode` / `nodesById` / `linesById` / `chartData` /
+  `txListOffset` / `txListDone`、および `pref` / `ui` / `cache`。ESモジュールの
+  importは再代入できないため、再代入は `setSession()` などの `set*()` 経由
+- 1ファイル内でしか使わないものはそのファイルのモジュール変数:
+  `nodeCardFilter` / `showArchivedNodes`(views/nodes.js)、`expandedNodeIds`
+  (components/collapsibleTree.js)、`editingLineId` / `recordLeafNodeIds`
+  (views/record.js)、`managerOpen` / `managerFrom` / `managerEditNode` /
+  `managerPendingPromote`(views/manager.js)、`prevPage`(state.js、非公開)
+- `cache.*` にまとめる際は `set*()` も不要になる(オブジェクトのプロパティ代入は
+  import先からでもできる)
+
 ## 2. UIパターンの重複排除
 
-以下は、複数画面に実装が散っている疑いがある(UX.mdは削除済みのため、
-一覧は常にコード側を `grep` して都度確認する。現状の確認結果は本ファイルの
-変更履歴・コミットログを参照)。1つずつ、以下の手順で潰す。
+以下は、複数画面に実装が散っている疑いがある(UX.md §4 に使用箇所の一覧が
+あるが、一覧は常にコード側を `grep` して都度確認する)。1つずつ、以下の手順で潰す。
 
 - カード + `.card-head`
 - マスクトグル(🐵/🙈)
@@ -57,26 +71,49 @@ UXの判断が要るため、抽出だけ行い連動させるかは別途判断
 
 ## 3. ファイル分割
 
-`apps/web/index.html` が肥大化し続けているため、ビルド不要のまま
-ネイティブESモジュールで分割する。
+**2026-09-28に実施済み。** `apps/web/index.html`(約2600行)を、ビルド不要のまま
+ネイティブESモジュールに分割した。関数本体は行単位で移しただけで、機能変更・
+リネームは含まない。現在の構成:
 
 ```
 apps/web/
-├── index.html              骨組みとルーティングのみ
-├── state.js                state定義、go()
+├── index.html              骨組み(head・importmap)と render()/ルーティングのみ
+├── style.css               全CSS
+├── state.js                state/pref/ui/cache・共有変数と set*()、go()/goBack()、
+│                           invalidateTxCache()、render() の中継(setRenderer)
 ├── views/
-│   ├── dashboard.js / record.js / transactions.js
+│   ├── login.js / dashboard.js / record.js / transactions.js
 │   ├── nodes.js / nodeDetail.js
-│   └── composition.js / settings.js
+│   ├── composition.js / settings.js(CSV書き出し・ログアウト含む)
+│   └── manager.js          ノード管理モーダル
 ├── components/
-│   ├── maskToggle.js / periodSelector.js
-│   └── collapsibleTree.js / cardHead.js
+│   ├── maskToggle.js / periodSelector.js / collapsibleTree.js
+│   ├── txRow.js            取引行の描画・編集/削除ボタン
+│   ├── barChart.js         ノード詳細の棒グラフ
+│   └── header.js           ヘッダ・ナビタブ・背景装飾
 └── lib/
-    └── format.js
+    ├── format.js           esc/yen/日付
+    ├── nodes.js            NODE_TYPE_META、loadAllNodesWithPaths 等
+    └── supabase.js         Supabaseクライアントとmemo鍵(ここだけtop-level await)
 ```
 
-1画面・1コンポーネントにつき1ファイル。「取引一覧を直したい」という指示で
-触るファイルが `views/transactions.js` 1つに絞られる状態を保つ。
+当初案との差分:
+
+- `components/cardHead.js` は作っていない。`.card-head` は関数ではなくHTMLに
+  直書きされたクラスなので、関数化は §2 の重複排除として別途行う
+- 期間セレクタの `<select>` も各画面に直書きのまま。`periodSelector.js` には
+  既存の共有部分(`SPEND_PERIODS` / `periodRange`)だけを置いた(統一は §2)
+- ドーナツ図(composition.js)・スパークライン(nodes.js)は1画面でしか使わない
+  ためview側に残した
+
+守るルール:
+
+- 1画面・1コンポーネントにつき1ファイル。「取引一覧を直したい」という指示で
+  触るファイルが `views/transactions.js` 1つに絞られる状態を保つ
+- 参照の向きは `index.html → views/ → components/ → lib/・state.js` の一方向。
+  views は `render()` を state.js 経由で呼び、index.html を import しない
+  (循環importを作らない)
+- 新しいファイルを足したら `sw.js` の `SHELL_ASSETS` にも追加する
 
 ## 4. 機械的なチェック
 
@@ -120,7 +157,7 @@ UIのテストは持たないが、以下は自動化する。財務データな
 ## 7. 死んでいる機能の扱い
 
 「ボタンはあるが押すとアラートが出るだけ」「設定項目があるが変更できない」
-という状態を放置しない(UX.mdは削除済みのため、都度コードを読んで洗い出す)。
+という状態を放置しない(UX.md §9 に既知の一覧があるが、都度コードを読んで洗い出す)。
 整理セッションのたびに、
 実装するか削除するかをその場で決める。見せかけのUIはコードを読む際の
 ノイズであり、機能追加時に誤って前提にされる原因にもなる。

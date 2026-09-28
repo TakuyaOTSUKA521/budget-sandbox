@@ -57,7 +57,12 @@ kakeibo/
 │   └── types.ts               supabase gen types で自動生成
 └── apps/
     ├── cli/                   core を呼ぶだけ
-    └── web/                   core を呼ぶだけ
+    └── web/                   core を呼ぶだけ(ビルド不要のESモジュール)
+        ├── index.html         骨組みとルーティングのみ
+        ├── state.js           画面をまたぐ状態変数と go()
+        ├── views/             1画面1ファイル
+        ├── components/        複数画面で使うUI部品
+        └── lib/               整形関数・Supabaseクライアント
 ```
 
 ## 参照のルール
@@ -71,6 +76,8 @@ apps/web  ─┘
 - `apps/*` が import してよいのは `packages/core` だけ
 - テーブル名・カラム名が登場するのは `packages/core` の中だけ
 - `reports.js` はビューを select するだけ。JOIN や GROUP BY を書かない
+- `apps/web` 内は `index.html → views/ → components/ → lib/・state.js` の一方向。
+  views/ から index.html や他の views/ を import しない(MAINTENANCE.md §3)
 
 ## 作業の進め方
 

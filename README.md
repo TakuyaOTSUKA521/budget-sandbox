@@ -58,6 +58,10 @@ kakeibo/
 └── apps/
     ├── cli/                    core を呼ぶだけの CLI
     └── web/                    core を呼ぶだけの静的 Web UI
+        ├── index.html            骨組みとルーティング
+        ├── views/                画面ごとのモジュール
+        ├── components/           画面をまたぐ UI 部品
+        └── lib/                  整形関数・Supabase クライアント
 ```
 
 `apps/*` は `packages/core` しか import せず、テーブル名・カラム名が登場するのは `packages/core` の中だけ、という参照ルールを敷いています（詳細は `CLAUDE.md`）。
@@ -110,7 +114,7 @@ npm run build
 npx serve apps/web   # 好きな静的サーバーで可
 ```
 
-Supabase の URL / anon key は `apps/web/index.html` に直接埋め込んであります（後述のとおり、公開しても問題ない前提の鍵です）。自分のプロジェクトで動かす場合はここを書き換えてください。
+Supabase の URL / anon key は `apps/web/lib/supabase.js` に直接埋め込んであります（後述のとおり、公開しても問題ない前提の鍵です）。自分のプロジェクトで動かす場合はここを書き換えてください。
 
 ## 公開にあたって注意していること
 
@@ -119,13 +123,13 @@ Supabase の URL / anon key は `apps/web/index.html` に直接埋め込んで�
 | リスク | 対策 |
 |---|---|
 | `.env`（本物の認証情報・暗号鍵）をうっかりコミットしてしまう | `.gitignore` で常に除外。過去のコミット履歴にも含まれていないことを確認済み |
-| Supabase の URL・anon/publishable key がコード中に見える（`apps/web/index.html`, `vercel.json`） | これはクライアントサイドで動くアプリである以上不可避で、Supabase 側もこの鍵は「公開されて構わない」設計にしている。実データへのアクセス制御は鍵の秘匿ではなく **Row Level Security（RLS）** で行っている。全テーブルで RLS を有効化し、`user_id = auth.uid()` を要求するポリシーのみを許可 |
+| Supabase の URL・anon/publishable key がコード中に見える（`apps/web/lib/supabase.js`, `vercel.json`） | これはクライアントサイドで動くアプリである以上不可避で、Supabase 側もこの鍵は「公開されて構わない」設計にしている。実データへのアクセス制御は鍵の秘匿ではなく **Row Level Security（RLS）** で行っている。全テーブルで RLS を有効化し、`user_id = auth.uid()` を要求するポリシーのみを許可 |
 | RLS が効かないビューが混ざる | ビュー作成時に必ず `security_invoker = true` を付ける運用を徹底（`CLAUDE.md` の禁止事項）。新しいビューを追加する際もこの点をレビューする |
 | GitHub 上で公開鍵を見つけた bot 等による signup 乱用（迷惑メール送信・無関係アカウントの大量作成） | Supabase 側で新規サインアップを無効化する、またはメール確認必須・reCAPTCHA を有効化することを推奨。現状は自分専用アプリとして運用し、他人が使うことを想定していない |
 | メモ欄の暗号化鍵 (`MEMO_ENCRYPTION_KEY`) もコード中に見える | この鍵は「Supabase ダッシュボード（service_role 接続、RLS を素通りする）から平文メモを見えなくする」ためのものであり、**アプリの利用者本人（＝鍵を知っている自分）からメモを隠す用途ではない**。クライアントサイドで完結する以上、ソースを読める人からは原理的に秘匿できない設計であることを `packages/core/crypto.js` のコメントに明記している |
 | 取引データを誤って上書き・物理削除してしまう | `lines` は物理削除せずバージョニングで扱う設計にしている（`CLAUDE.md` の禁止事項） |
 
-**もしこのコードを自分用に動かす場合は**、必ず自分の Supabase プロジェクトを新規に作り、`apps/web/index.html` 内の URL・anon key と `.env` の値をすべて自分のものに差し替えてください。他人の鍵を流用したり、このリポジトリの鍵をそのまま使ったりしないでください。
+**もしこのコードを自分用に動かす場合は**、必ず自分の Supabase プロジェクトを新規に作り、`apps/web/lib/supabase.js` 内の URL・anon key と `.env` の値をすべて自分のものに差し替えてください。他人の鍵を流用したり、このリポジトリの鍵をそのまま使ったりしないでください。
 
 ## 今後やりたいこと（TODO）
 

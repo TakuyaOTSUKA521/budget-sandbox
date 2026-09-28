@@ -1,6 +1,6 @@
 # kakeibo — UXの現状
 
-`apps/web/index.html`(1ファイルSPA)の実装を、画面・導線ベースでそのまま記述したもの。
+`apps/web`(ビルド不要のESモジュールSPA。構成は MAINTENANCE.md §3)の実装を、画面・導線ベースでそのまま記述したもの。
 
 **DESIGN.mdの「5. UX方針」との違い**: あちらは当初の設計思想(日単位ドリルダウン、記録漏れの自動検出など)。
 このファイルはその後の実装で実際にどう動いているかの記録で、方針と食い違う箇所は
@@ -30,7 +30,8 @@
   `ui.recordSlot` / `ui.selectedFromNode`)、`cache.*`(サーバー取得データの保持、
   明示的に無効化するまで — `cache.txListRows` / `cache.txPeriod`)に分けられている。
   それ以外(`nodeCardFilter` / `expandedNodeIds` / `managerOpen` 系など)は
-  まだこの3分類に整理されていない(MAINTENANCE.md §1参照)
+  まだこの3分類に整理されていない(MAINTENANCE.md §1参照)。画面をまたぐものは
+  `state.js`、1画面でしか使わないものはその画面の `views/*.js` に置かれている
 
 ## 2. ナビゲーション
 
@@ -188,6 +189,11 @@
 | ページネーション(明示的な「さらに読み込む」) | 取引一覧のみ |
 | ネイティブ `title` 属性によるホバー情報 | 棒グラフ・構成比ドーナツ・分類ドット |
 
+関数として共通化済みのものは `apps/web/components/` にある(マスクトグル =
+`maskToggle.js`、折りたたみ式ツリー = `collapsibleTree.js`、取引行 = `txRow.js`)。
+カード + `.card-head`・期間セレクタの `<select>`・ページネーションは各 `views/*.js`
+にHTMLを直書きしている(MAINTENANCE.md §2 の対象)。
+
 ## 5. ビジュアルデザイン
 
 - テーマ名は「夏(Natsu)」。`.web-ui-ref/Budget Sandbox - Natsu.html`
@@ -215,7 +221,9 @@
 ## 7. PWA・オフライン
 
 インストール可能(`manifest.webmanifest` + `sw.js`)。Service Workerは同一
-オリジンのアプリシェル(`index.html` / `packages/core/*.js` / アイコン)だけを
+オリジンのアプリシェル(`index.html` / `style.css` / `state.js` / `views/` /
+`components/` / `lib/` / `packages/core/*.js` / アイコン。一覧は `sw.js` の
+`SHELL_ASSETS`)だけを
 network-first でキャッシュし、オフライン時はキャッシュにフォールバックする。
 Supabase・Google Fonts・esm.sh へのリクエストはキャッシュ対象外なので、
 **オフラインでは新しいデータの閲覧・記録はできない**(あくまで「シェルだけは
@@ -223,7 +231,7 @@ Supabase・Google Fonts・esm.sh へのリクエストはキャッシュ対象�
 
 ## 8. セキュリティ・プライバシーがUXに現れる部分
 
-- memoは端末上で復号(`crypto.js`)して表示される。暗号化キーはこのファイル内に
+- memoは端末上で復号(`crypto.js`)して表示される。暗号化キーは `apps/web/lib/supabase.js` に
   ハードコードされており、狙いはSupabaseダッシュボード(RLSを回避できる管理者
   ロール)からmemoを読めなくすることで、ページのソースを読む相手からは隠せない
 - マスクトグル(🐵/🙈)は「見た目を隠す」だけのUI機能で、認証や暗号化ではない。
