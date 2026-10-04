@@ -36,7 +36,10 @@ export async function renderDetailPage() {
       <section class="card">
         <div class="card-head">
           <h1>${esc(label)}</h1>
-          ${nodeHideToggleButton(nodeId)}
+          <div style="display:flex;gap:8px;align-items:center;">
+            ${nodeHideToggleButton(nodeId)}
+            <button type="button" class="btn" style="width:auto;" data-open-manager="${esc(nodeId)}">編集</button>
+          </div>
         </div>
         <div class="stat-value mono">${maskNodeYen(nodeId, latestBalance)}</div>
         <p style="margin:0 0 18px;font-size:12px;color:var(--muted);">子孫を含む累計・全期間</p>

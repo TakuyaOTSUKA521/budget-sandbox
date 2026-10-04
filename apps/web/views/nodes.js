@@ -152,7 +152,7 @@ export async function renderNodesPage() {
           <h1>ノード一覧</h1>
           <p style="margin:2px 0 0;font-size:12.5px;color:var(--muted);">${note}</p>
         </div>
-        <button class="btn-primary" style="width:auto;" data-open-manager>ノードを作成</button>
+        <button class="btn-primary" style="width:auto;" data-open-manager>ノードを編集・管理</button>
       </div>
       <div style="display:flex;gap:8px;align-items:center;">
         <button type="button" id="toggle-archived-btn" class="btn">${showArchivedNodes ? 'アーカイブ済みを隠す' : 'アーカイブ済みを表示'}</button>

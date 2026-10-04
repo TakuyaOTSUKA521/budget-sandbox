@@ -157,7 +157,7 @@ export async function renderRecordPage() {
         <h2>今日の記録</h2>
         <p style="margin:2px 0 8px;font-size:12px;color:var(--muted);">登録するとここに追加されます。</p>
         <div id="today-tx">${todayRows}</div>
-        <p style="margin:12px 0 0;font-size:12px;color:var(--faint);line-height:1.7;">候補は出どころ・行き先それぞれの使用頻度から並びます。新しい店や科目は<a href="#" data-open-manager>ノード管理</a>から作成できます。</p>
+        <p style="margin:12px 0 0;font-size:12px;color:var(--faint);line-height:1.7;">候補は出どころ・行き先それぞれの使用頻度から並びます。</p>
       </section>
     </div>
   `;

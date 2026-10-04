@@ -139,7 +139,7 @@ async function render() {
   root.querySelectorAll('[data-open-manager]').forEach((el) => {
     el.addEventListener('click', (e) => {
       e.preventDefault();
-      openManager();
+      openManager(el.dataset.openManager || null);
     });
   });
   root.querySelectorAll('[data-go-back]').forEach((el) => {

@@ -13,10 +13,12 @@ let managerFrom = '記録';
 let managerEditNode = null;
 let managerPendingPromote = null;
 
-export function openManager() {
+// Passing a nodeId opens straight into editing that node (ノード詳細's 編集).
+export async function openManager(nodeId = null) {
+  if (nodeId && !nodesById.has(nodeId)) await loadAllNodesWithPaths();
   managerOpen = true;
-  managerFrom = state.page === 'nodes' ? 'ノード一覧' : '記録';
-  managerEditNode = null;
+  managerFrom = { nodes: 'ノード一覧', detail: 'ノード詳細' }[state.page] ?? '記録';
+  managerEditNode = nodeId ? nodesById.get(nodeId) ?? null : null;
   managerPendingPromote = null;
   ui.resetManagerForm = true;
   render();
