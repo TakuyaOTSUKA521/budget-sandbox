@@ -10,6 +10,8 @@ import { SPEND_PERIODS, periodRange } from '../components/periodSelector.js';
 import { attachTxRowActions } from '../components/txRow.js';
 
 const TX_PAGE_SIZE = 20;
+// supabase/config.toml の max_rows。これ以上は1回の select で返らないので分けて取る
+const TX_LOAD_ALL_PAGE_SIZE = 1000;
 
 export async function fetchTxPage(reset) {
   if (reset) {
@@ -22,6 +24,36 @@ export async function fetchTxPage(reset) {
   cache.txListRows = cache.txListRows.concat(page);
   setTxListOffset(txListOffset + page.length);
   if (page.length < TX_PAGE_SIZE) setTxListDone(true);
+}
+
+// memo は暗号化して保存しているのでサーバー側では検索できない
+// (DESIGN.md「memo 暗号化の脅威モデル」)。検索中は選択期間の残りを
+// すべて読み込み、クライアント側で絞り込む。
+let loadAllPromise = null;
+
+function loadAllTxRows() {
+  if (txListDone) return Promise.resolve();
+  if (!loadAllPromise) {
+    loadAllPromise = (async () => {
+      // 期間変更・書き込みによる無効化や「さらに読み込む」で配列が差し替わったら、
+      // 取得結果は古いので捨てる(差し替え後の render() で取り直す)
+      const rowsRef = cache.txListRows;
+      const { from, to } = periodRange(cache.txPeriod);
+      let rest = [];
+      let offset = txListOffset;
+      for (;;) {
+        const page = await listLines(supabase, { ascending: false, limit: TX_LOAD_ALL_PAGE_SIZE, offset, from, to }, memoKey);
+        rest = rest.concat(page);
+        offset += page.length;
+        if (page.length < TX_LOAD_ALL_PAGE_SIZE) break;
+      }
+      if (cache.txListRows !== rowsRef) return;
+      cache.txListRows = rowsRef.concat(rest);
+      setTxListOffset(offset);
+      setTxListDone(true);
+    })().finally(() => { loadAllPromise = null; });
+  }
+  return loadAllPromise;
 }
 
 function filterTxRows(rows, search) {
@@ -76,6 +108,16 @@ function buildTxRows(rows) {
     .join('') || '<p style="padding:16px 0;font-size:13px;color:var(--faint);">該当する記録がありません</p>';
 }
 
+function txListCountText() {
+  return `読み込み済み ${cache.txListRows.length} 件・${SPEND_PERIODS[cache.txPeriod]}`;
+}
+
+function txListFooterHtml() {
+  if (txListDone) return '<span style="font-size:12px;color:var(--faint);">すべて読み込みました</span>';
+  if (loadAllPromise) return '<span style="font-size:12px;color:var(--faint);">検索のため全件を読み込み中…</span>';
+  return '<button id="load-more-btn" class="btn">さらに読み込む</button>';
+}
+
 export async function renderTxListPage() {
   // Node types (from/to) drive the 支出/収入/振替 classification below - not
   // needed for anything else on this page, but loadAllNodesWithPaths also
@@ -85,7 +127,6 @@ export async function renderTxListPage() {
   const period = cache.txPeriod;
   const search = (state.txSearch ?? '').trim().toLowerCase();
   const filtered = filterTxRows(cache.txListRows, search);
-  const total = cache.txListRows.length;
 
   const periodSelect = `
     <select id="tx-period-select" style="width:auto;padding:5px 8px;font-size:11.5px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
@@ -98,7 +139,7 @@ export async function renderTxListPage() {
       <div class="card-head">
         <div>
           <h1>取引一覧</h1>
-          <p style="margin:2px 0 0;font-size:12.5px;color:var(--muted);">読み込み済み ${total} 件・${SPEND_PERIODS[period]}</p>
+          <p id="tx-list-count" style="margin:2px 0 0;font-size:12.5px;color:var(--muted);">${txListCountText()}</p>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
           ${periodSelect}
@@ -116,9 +157,7 @@ export async function renderTxListPage() {
           <span>日付</span><span>出どころ</span><span>行き先</span><span>メモ</span><span style="text-align:right;">金額</span><span></span>
         </div>
         <div id="tx-rows">${buildTxRows(filtered)}</div>
-        <div style="display:flex;justify-content:center;padding:16px 0 18px;">
-          ${txListDone ? '<span style="font-size:12px;color:var(--faint);">すべて読み込みました</span>' : '<button id="load-more-btn" class="btn">さらに読み込む</button>'}
-        </div>
+        <div id="tx-list-footer" style="display:flex;justify-content:center;padding:16px 0 18px;">${txListFooterHtml()}</div>
       </div>
     </section>
   `;
@@ -130,6 +169,7 @@ export function wireTxList() {
   document.getElementById('tx-search').addEventListener('input', (e) => {
     state.txSearch = e.target.value;
     renderTxRowsInPlace();
+    searchAllIfNeeded();
   });
 
   document.getElementById('tx-period-select').addEventListener('change', async (e) => {
@@ -138,6 +178,12 @@ export function wireTxList() {
     await render();
   });
 
+  wireLoadMore();
+  // 検索語を残したまま期間変更・書き込み後の再描画が来た場合も全件を対象にする
+  searchAllIfNeeded();
+}
+
+function wireLoadMore() {
   const loadMoreBtn = document.getElementById('load-more-btn');
   if (loadMoreBtn) {
     loadMoreBtn.addEventListener('click', async () => {
@@ -145,6 +191,29 @@ export function wireTxList() {
       render();
     });
   }
+}
+
+async function searchAllIfNeeded() {
+  if (txListDone || !(state.txSearch ?? '').trim()) return;
+  const pending = loadAllTxRows();
+  renderTxFooterInPlace();
+  try {
+    await pending;
+  } catch (err) {
+    console.error(err);
+  }
+  // 読み込み中に別画面へ移っていたら何もしない
+  if (!document.getElementById('tx-rows')) return;
+  renderTxRowsInPlace();
+  renderTxFooterInPlace();
+}
+
+function renderTxFooterInPlace() {
+  const footerEl = document.getElementById('tx-list-footer');
+  if (!footerEl) return;
+  footerEl.innerHTML = txListFooterHtml();
+  document.getElementById('tx-list-count').textContent = txListCountText();
+  wireLoadMore();
 }
 
 function renderTxRowsInPlace() {
