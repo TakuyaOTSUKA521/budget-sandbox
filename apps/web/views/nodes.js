@@ -1,9 +1,9 @@
-import { listNodesWithPaths, archiveNode, unarchiveNode } from '../packages/core/nodes.js';
+import { listNodesWithPaths, archiveNode, unarchiveNode, deleteNode } from '../packages/core/nodes.js';
 import { getRollupBalances, getCumulative, getCumulativeForNodes } from '../packages/core/reports.js';
 import { supabase } from '../lib/supabase.js';
 import { esc, yen } from '../lib/format.js';
 import { NODE_TYPE_META, computeSpendingDestinations } from '../lib/nodes.js';
-import { root, state, pref, go, render } from '../state.js';
+import { root, state, pref, go, render, invalidateTxCache } from '../state.js';
 import { SPEND_PERIODS, periodRange } from '../components/periodSelector.js';
 import { maskNodeYen, nodeHideToggleButton } from '../components/maskToggle.js';
 import { treeToggleCell, renderNodeTree } from '../components/collapsibleTree.js';
@@ -28,6 +28,20 @@ async function handleArchiveNode(nodeId) {
 
 async function handleUnarchiveNode(nodeId) {
   await unarchiveNode(supabase, nodeId);
+  await render();
+}
+
+// Same deletion as ノード管理 (nodes.js#deleteNode): supersedes every line touching
+// the node and hides it for good, archive list included (DESIGN.md「ノードの削除」).
+async function handleDeleteArchivedNode(nodeId, name) {
+  if (!confirm(`「${name}」を削除しますか？関連する取引もすべて削除されます（元に戻せません）。`)) return;
+  try {
+    await deleteNode(supabase, nodeId);
+  } catch (error) {
+    alert(error.message);
+    return;
+  }
+  invalidateTxCache();
   await render();
 }
 
@@ -98,6 +112,7 @@ function archivedRow(n) {
       <span style="flex:1;color:var(--faint);">${esc(n.name)}</span>
       <span style="font-size:11px;color:var(--faint);letter-spacing:0.03em;">${n.node_type}</span>
       <button type="button" class="btn-sm" data-node-unarchive-id="${n.id}">復元</button>
+      <button type="button" class="btn-sm danger" data-node-delete-id="${n.id}" data-name="${esc(n.name)}">削除</button>
     </div>
   `;
 }
@@ -299,6 +314,13 @@ export function wireNodesPage() {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       handleUnarchiveNode(btn.dataset.nodeUnarchiveId);
+    });
+  });
+
+  root.querySelectorAll('[data-node-delete-id]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleDeleteArchivedNode(btn.dataset.nodeDeleteId, btn.dataset.name);
     });
   });
 

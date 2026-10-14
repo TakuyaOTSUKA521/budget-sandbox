@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.17"
   }
   graphql_public: {
     Tables: {
@@ -169,6 +169,7 @@ export type Database = {
         Row: {
           created_at: string
           currency: string
+          deleted_at: string | null
           exclude_from_flow_totals: boolean
           id: string
           is_archived: boolean
@@ -180,6 +181,7 @@ export type Database = {
         Insert: {
           created_at?: string
           currency?: string
+          deleted_at?: string | null
           exclude_from_flow_totals?: boolean
           id?: string
           is_archived?: boolean
@@ -191,6 +193,7 @@ export type Database = {
         Update: {
           created_at?: string
           currency?: string
+          deleted_at?: string | null
           exclude_from_flow_totals?: boolean
           id?: string
           is_archived?: boolean

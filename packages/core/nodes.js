@@ -34,8 +34,10 @@ export async function updateNode(supabase, nodeId, { name, parentId, excludeFrom
     return data;
 }
 
+// Deleted nodes (deleted_at set) are never returned, archived or not -
+// see DESIGN.md「ノードの削除」.
 export async function listNodes(supabase, { includeArchived = false } = {}) {
-    let query = supabase.from('nodes').select('*').order('name');
+    let query = supabase.from('nodes').select('*').is('deleted_at', null).order('name');
     if (!includeArchived) query = query.eq('is_archived', false);
 
     const { data, error } = await query;
@@ -82,14 +84,25 @@ async function removeNode(supabase, nodeId) {
     if (error) throw error;
 }
 
+// Marks a node deleted (DESIGN.md「ノードの削除」): hidden everywhere including
+// the archive list. Detached from its parent so an invisible child doesn't keep
+// the parent from becoming a leaf again.
+async function markNodeDeleted(supabase, nodeId) {
+    const { error } = await supabase
+        .from('nodes')
+        .update({ deleted_at: new Date().toISOString(), is_archived: true, parent_id: null })
+        .eq('id', nodeId);
+    if (error) throw error;
+}
+
 // Deletes a node: first supersedes every line touching it (never a physical
 // line delete - see lines.js), then removes the node row itself.
 //
 // A node that was ever used in a transaction still has a row in `lines`
 // after superseding (only `superseded_at` changed), and `lines.from_node` /
 // `to_node` are `on delete restrict` - so the DB will refuse to physically
-// remove it. In that case we fall back to archiving: same result for the
-// user (gone from every list/picker/suggestion), full history preserved.
+// remove it. In that case we fall back to marking it deleted: same result for
+// the user (gone from every list, archive included), full history preserved.
 export async function deleteNode(supabase, nodeId) {
     if (await hasChildren(supabase, nodeId)) {
         throw new Error('子ノードがあるため削除できません。先に子ノードを削除するか、移動してください。');
@@ -99,11 +112,11 @@ export async function deleteNode(supabase, nodeId) {
 
     try {
         await removeNode(supabase, nodeId);
-        return { removed: true, archived: false };
+        return { removed: true, markedDeleted: false };
     } catch (error) {
         if (error.code !== '23503') throw error; // not a foreign-key-restrict failure
-        await archiveNode(supabase, nodeId);
-        return { removed: false, archived: true };
+        await markNodeDeleted(supabase, nodeId);
+        return { removed: false, markedDeleted: true };
     }
 }
 
@@ -132,7 +145,7 @@ export async function listNodesWithPaths(supabase, { includeArchived = false } =
 
 export async function searchNodes(supabase, query) {
     const [{ data: nodes, error: nodesError }, paths] = await Promise.all([
-        supabase.from('nodes').select('*').eq('is_archived', false).ilike('name', `%${query}%`),
+        supabase.from('nodes').select('*').eq('is_archived', false).is('deleted_at', null).ilike('name', `%${query}%`),
         getNodePaths(supabase)
     ]);
     if (nodesError) throw nodesError;

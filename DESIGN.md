@@ -53,6 +53,7 @@
 | node_type | TEXT NOT NULL | `asset` / `liability` / `flow` |
 | currency | TEXT NOT NULL DEFAULT 'JPY' | 将来のマイル・外貨用 |
 | is_archived | BOOLEAN DEFAULT false | 使わなくなったノードを隠す |
+| deleted_at | TIMESTAMPTZ | 削除済みの印。NULL なら未削除(下記「ノードの削除」) |
 | exclude_from_flow_totals | BOOLEAN NOT NULL DEFAULT false | 収支の集計・構成比解析から除外する(初期残高ノードなど) |
 | created_at | TIMESTAMPTZ DEFAULT now() | |
 
@@ -120,6 +121,20 @@ A は中間ノードになるため既存の記録が制約違反になる。手
 
 この操作は `packages/core` の `nodes.js` に `promoteToParent(nodeId)` として実装し、
 手動での付け替えミスを防ぐ。
+
+**ノードの削除。** 取引は物理削除しない(lines「バージョニング」)ため、一度でも取引に
+使われたノードは、取引を無効化した後も `lines.from_node`/`to_node` の
+`on delete restrict` に阻まれて行を消せない。この場合は次のように「削除済み」にする。
+
+1. そのノードが関わる有効な取引をすべて無効化する(相手側ノードの履歴からも消える)
+2. ノード行を物理削除できればそれで終わり(取引に一度も使われていないノード)
+3. できなければ `deleted_at` を入れ、`is_archived = true`、`parent_id = NULL` にする
+
+削除済みノードは一覧・入力候補・アーカイブ一覧のどこにも出さず、復元もしない
+(`packages/core` のノード取得関数で常に除外する)。アーカイブとの違いはここで、
+アーカイブは「隠すが取引も集計も残す・戻せる」、削除は「取引ごと消して戻さない」。
+`parent_id` を外すのは、見えない子が残って親が葉に戻れなくなる(記録できない・
+削除できない)のを防ぐため。有効な取引を持たないので、親から外しても集計は変わらない。
 
 **粒度は後から上げられる。** 「その他(外食)」に溜まった記録のうち、
 特定の店が増えてきたら、新しい葉ノードを作って `lines` の `node_id` を差し替える。

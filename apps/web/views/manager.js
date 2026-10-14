@@ -40,9 +40,8 @@ async function handleDeleteNode(nodeId) {
   const label = node?.path ?? node?.name ?? nodeId;
   if (!confirm(`「${label}」を削除しますか？関連する取引もすべて削除されます（元に戻せません）。`)) return;
 
-  let result;
   try {
-    result = await deleteNode(supabase, nodeId);
+    await deleteNode(supabase, nodeId);
   } catch (error) {
     alert(error.message);
     return;
@@ -54,10 +53,6 @@ async function handleDeleteNode(nodeId) {
   }
   invalidateTxCache();
   await render();
-
-  if (result.archived) {
-    alert('過去の取引履歴が残っているため完全な削除はできず、取引を削除したうえでノードをアーカイブしました。');
-  }
 }
 
 // ============================================================
