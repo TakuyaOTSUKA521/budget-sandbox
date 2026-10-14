@@ -1,7 +1,7 @@
 import { getLeafNodes, listNodesWithPaths } from '../packages/core/nodes.js';
 import { listLines } from '../packages/core/reports.js';
 import { supabase, memoKey } from '../lib/supabase.js';
-import { esc } from '../lib/format.js';
+import { esc, todayISODate } from '../lib/format.js';
 import { NODE_TYPE_META } from '../lib/nodes.js';
 import {
   session, pref, cache, setSession, setNodesById, setLinesById, setChartData, setTxListOffset, setTxListDone, go
@@ -119,7 +119,7 @@ async function handleExportCsv() {
 
     const header = ['日付', '出どころ', '行き先', '金額', 'メモ'];
     downloadCsv(
-      `kakeibo_${new Date().toISOString().slice(0, 10)}.csv`,
+      `kakeibo_${todayISODate()}.csv`,
       header,
       rows.map((l) => [l.occurred_on, l.from_name, l.to_name, l.amount, l.memo])
     );
@@ -148,7 +148,7 @@ async function handleExportNodesCsv() {
 
     const header = ['分類', '階層パス', 'ノード名', '親ノード', '収支から除外', 'アーカイブ済み'];
     downloadCsv(
-      `kakeibo_nodes_${new Date().toISOString().slice(0, 10)}.csv`,
+      `kakeibo_nodes_${todayISODate()}.csv`,
       header,
       sorted.map((n) => [
         NODE_TYPE_META[n.node_type].label,

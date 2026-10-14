@@ -7,8 +7,10 @@ export function yen(n) {
   return (v < 0 ? '−' : '') + Math.abs(v).toLocaleString('ja-JP');
 }
 
+// toISOString() は UTC なので使わない(日本時間 0〜9時に前日になる)。端末のローカル日付で作る
 export function todayISODate() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export function monthStart(date = new Date()) {

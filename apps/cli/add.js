@@ -16,7 +16,9 @@ if (!fromNode || !toNode || !amount) {
 }
 
 const memo = memoParts.join(' ');
-const occurredOn = new Date().toISOString().slice(0, 10);
+// toISOString() は UTC なので使わない(日本時間 0〜9時に前日になる)。端末のローカル日付で作る
+const now = new Date();
+const occurredOn = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
 try {
     const line = await recordLine(supabase, {
