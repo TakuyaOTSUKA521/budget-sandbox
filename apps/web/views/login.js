@@ -26,6 +26,6 @@ export function wireLogin() {
       return;
     }
     setSession(data.session);
-    go('record');
+    go('dashboard');
   });
 }

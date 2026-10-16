@@ -25,18 +25,21 @@ Vibe Coding(Claude Codeによる継続的な機能追加)で起きがちな劣�
 ままになっている。次回の整理セッションで分類・リネームする:
 
 - 明らかに `cache.*`(サーバー由来データの保持): `nodesById` / `linesById` /
-  `chartData` / `txListOffset` / `txListDone` / `recordLeafNodeIds`
+  `chartData` / `txListOffset` / `txListDone` / `sheetData`
   (`txListOffset`/`txListDone` は `cache.txListRows` と同じ無効化サイクルに
   乗っているので、本来は同じ `cache` オブジェクトにまとめるべき)
 - 分類に判断が必要: `nodeCardFilter`(pref.*寄りだがlocalStorage永続の確認要)、
-  `expandedNodeIds` / `prevPage`(4分類のどれにも寿命がきれいに一致しない。
+  `expandedNodeIds`(4分類のどれにも寿命がきれいに一致しない。
   4分類を拡張するか、変数の寿命設計自体を見直すか要判断)、`showArchivedNodes` /
-  `selectedToNode` / `editingLineId` / `managerOpen` / `managerOpenedForNode` /
+  `selectedToNode` / `managerOpen` / `managerOpenedForNode` / `managerPrefillName` /
   `managerEditNode` / `managerPendingPromote`(ui.*寄りだが数クリックより長寿命)
   (`managerFrom` は2026-10-17の整理で、表示先の説明文と一緒に削除した)
 
 2026-10-17 の UI 整理で増えた状態は分類どおりに置いた: 「表示を編集」の
-`state.displayEditing`(ページ遷移で解除したいので `state.*`)。
+`state.displayEditing`(ページ遷移で解除したいので `state.*`)、記録シート・編集シートの
+開閉 `ui.sheet`(どの画面の上にも重なり、`go()` で消えては困るので `ui.*`)。
+同日の画面構成の変更(記録タブの廃止)で `editingLineId` / `recordLeafNodeIds` /
+`ui.seededEditLine` / `ui.resetRecordForm` / `prevPage`(と `goBack()`)は不要になり削除した。
 
 2026-09-28のファイル分割(§3)で、これらの未分類変数は名前を変えずに置き場所だけ
 移した。リネーム時はこの対応を起点にする:
@@ -47,9 +50,9 @@ Vibe Coding(Claude Codeによる継続的な機能追加)で起きがちな劣�
   importは再代入できないため、再代入は `setSession()` などの `set*()` 経由
 - 1ファイル内でしか使わないものはそのファイルのモジュール変数:
   `nodeCardFilter` / `showArchivedNodes`(views/nodes.js)、`expandedNodeIds`
-  (components/collapsibleTree.js)、`editingLineId` / `recordLeafNodeIds`
-  (views/record.js)、`managerOpen` / `managerOpenedForNode` / `managerEditNode` /
-  `managerPendingPromote`(views/manager.js)、`prevPage`(state.js、非公開)
+  (components/collapsibleTree.js)、`sheetData`(views/recordSheet.js)、`managerOpen` /
+  `managerOpenedForNode` / `managerEditNode` / `managerPendingPromote` /
+  `managerPrefillName`(views/manager.js)
 - `cache.*` にまとめる際は `set*()` も不要になる(オブジェクトのプロパティ代入は
   import先からでもできる)
 
@@ -91,19 +94,21 @@ UXの判断が要るため、抽出だけ行い連動させるかは別途判断
 apps/web/
 ├── index.html              骨組み(head・importmap)と render()/ルーティングのみ
 ├── style.css               全CSS
-├── state.js                state/pref/ui/cache・共有変数と set*()、go()/goBack()、
+├── state.js                state/pref/ui/cache・共有変数と set*()、go()、
 │                           invalidateTxCache()、render() の中継(setRenderer)
 ├── views/
-│   ├── login.js / dashboard.js / record.js / transactions.js
+│   ├── login.js / dashboard.js / transactions.js
+│   ├── recordSheet.js      記録シート / 取引の編集シート(どの画面の上にも重なる)
 │   ├── nodes.js / nodeDetail.js
-│   ├── composition.js / settings.js(CSV書き出し・ログアウト含む)
+│   ├── composition.js(分析タブ) / settings.js(CSV書き出し・ログアウト含む)
 │   └── manager.js          ノード管理モーダル
 ├── components/
 │   ├── maskToggle.js       マスク・「表示を編集」
 │   ├── periodSelector.js / periodSegment.js   期間の範囲計算 / 期間セグメント
 │   ├── segmented.js / toggleChip.js / iconButton.js / confirmDialog.js
 │   ├── collapsibleTree.js
-│   ├── txRow.js            取引行の描画・行タップで編集へ
+│   ├── txRow.js            取引行の描画(行タップは index.html が一括で受けて編集シートへ)
+│   ├── recordForm.js       記録フォーム(記録シートと編集シートで共用)
 │   ├── barChart.js         ノード詳細の棒グラフ
 │   └── header.js           ヘッダ・ナビタブ・背景装飾
 └── lib/

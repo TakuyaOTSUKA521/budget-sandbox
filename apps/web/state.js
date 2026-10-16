@@ -19,32 +19,27 @@ export const pref = {
 export let selectedToNode = null;
 export function setSelectedToNode(value) { selectedToNode = value; }
 // ui.*: 数クリック程度の操作中の状態 (MAINTENANCE.md §1)
-// 記録: which of the two slots (出どころ/行き先) the shared candidate picker
-// is currently showing, and the chosen 出どころ. ui.selectedFromNode
+// 記録シート: which of the two slots (出どころ/行き先) the shared candidate
+// picker is currently showing, and the chosen 出どころ. ui.selectedFromNode
 // intentionally persists across a successful submit (unlike selectedToNode)
-// - see the comment in wireRecord's add-btn handler.
+// - see views/recordSheet.js.
 export const ui = {
+  // 記録シート / 取引の編集シート: null (closed) | { mode: 'record' } |
+  // { mode: 'edit', line }. Kept out of `state` so it can sit over any page.
+  sheet: null,
   recordSlot: 'to',
   selectedFromNode: null,
-  // The state.editLine object the slots were last seeded from, so a
-  // re-render while editing (slot/chip clicks) keeps the user's picks
-  // instead of resetting them to the original line's nodes.
-  seededEditLine: null,
   // Form values as typed, carried across a re-render (consumed once) - every
   // render() rebuilds the whole DOM, so anything only in an <input> is lost
-  // otherwise (captureFormDrafts). Set resetRecordForm/resetManagerForm
-  // right before a render() that should start that form fresh instead.
+  // otherwise (captureFormDrafts). Set resetManagerForm right before a
+  // render() that should start that form fresh instead.
   recordDraft: null,
   managerDraft: null,
-  resetRecordForm: false,
   resetManagerForm: false,
   // ノード詳細グラフの横スクロール位置(右端=最新日から何日分戻っているか)。
   // 画面遷移(go)で0に戻し、切替・マスク等の再描画では保つ。
   chartScrollDaysFromRight: 0,
 };
-// Where 設定/構成比 (neither part of the nav-tab row) should return to when
-// closed - the page that was active right before navigating to them.
-let prevPage = 'record';
 export let nodesById = new Map();
 export function setNodesById(value) { nodesById = value; }
 export let linesById = new Map();
@@ -87,20 +82,8 @@ export function go(page, extra = {}) {
   // Fully replace state (not merge) so leftover transient state from a
   // previous visit - an in-progress edit, a pending hierarchy confirmation,
   // a search query - doesn't leak into an unrelated later visit to the page.
-  prevPage = state.page;
   state = { page, ...extra };
-  // Re-opening the same line for editing must start from its saved nodes.
-  ui.seededEditLine = null;
-  ui.resetRecordForm = true;
   ui.chartScrollDaysFromRight = 0;
   render();
   window.scrollTo(0, 0);
-}
-
-// 戻る for 設定/構成比 (see prevPage above) - falls back to 記録 in the one
-// edge case where prevPage itself is settings (can't happen via normal nav,
-// but a stale value shouldn't be able to bounce someone between two
-// non-tab pages with no way out).
-export function goBack() {
-  go(prevPage === 'settings' || prevPage === 'analysis' ? 'record' : prevPage);
 }

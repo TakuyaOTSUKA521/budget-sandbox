@@ -10,21 +10,27 @@ import { confirmDialog } from '../components/confirmDialog.js';
 
 // ノード管理 modal: state lives outside `state` on purpose. `go()` fully
 // replaces `state`, which would otherwise blow away whatever page it's
-// layered on top of (記録 or ノード一覧) the moment the modal opened.
+// layered on top of (ノード一覧, ノード詳細, or the 記録シート) the moment the
+// modal opened. Opened over the 記録シート, closing it returns to the sheet
+// (ui.sheet survives, so the next render() draws the sheet again).
 export let managerOpen = false;
 // Opened straight into editing one node (ノード詳細's 編集): キャンセル then
 // closes the modal instead of falling back to the 新しいノード form.
 let managerOpenedForNode = false;
 let managerEditNode = null;
 let managerPendingPromote = null;
+// ノード名の初期値(記録シートの検索結果「+「…」を新しいノードとして作成」)。
+let managerPrefillName = '';
 
-// Passing a nodeId opens straight into editing that node (ノード詳細's 編集).
-export async function openManager(nodeId = null) {
+// Passing a nodeId opens straight into editing that node (ノード詳細's 編集);
+// `name` pre-fills the 新しいノード form instead.
+export async function openManager(nodeId = null, { name = '' } = {}) {
   if (nodeId && !nodesById.has(nodeId)) await loadAllNodesWithPaths();
   managerOpen = true;
   managerOpenedForNode = Boolean(nodeId);
   managerEditNode = nodeId ? nodesById.get(nodeId) ?? null : null;
   managerPendingPromote = null;
+  managerPrefillName = name;
   ui.resetManagerForm = true;
   render();
 }
@@ -71,6 +77,7 @@ function closeManagerSilently() {
   managerOpen = false;
   managerEditNode = null;
   managerPendingPromote = null;
+  managerPrefillName = '';
   ui.resetManagerForm = true;
 }
 
@@ -78,7 +85,7 @@ function closeManagerSilently() {
 // ノード管理
 // ============================================================
 
-// ノード管理: a modal layered over whichever screen opened it (記録 or
+// ノード管理: a modal layered over whichever screen opened it (記録シート or
 // ノード一覧), not a page - see .webui-ref navigation brief 2-C. Its tree is
 // a lightweight reference for placement only; balances/graphs/archiving
 // stay the job of ノード一覧 (brief's explicit boundary, not to be blurred).
@@ -112,7 +119,7 @@ export async function renderManagerModal() {
   const typeParent = nodesById.get(selectedParentId);
   const typeLocked = Boolean(editNode || typeParent);
   const selectedNodeType = editNode?.node_type ?? typeParent?.node_type ?? draft?.nodeType ?? 'flow';
-  const nameValue = draft?.name ?? pending?.name ?? editNode?.name ?? '';
+  const nameValue = draft?.name ?? pending?.name ?? editNode?.name ?? managerPrefillName;
   const excludeChecked = draft?.excludeFromFlowTotals ?? pending?.excludeFromFlowTotals ?? editNode?.exclude_from_flow_totals ?? false;
   // マスク・アーカイブ(ノード詳細ではここで切り替える)。アーカイブは葉ノードのみ
   // (中間ノードを隠すと子が一覧から迷子になる - ノード一覧の 📦 と同じ条件)。
@@ -269,6 +276,11 @@ export function wireManagerModal() {
     }
     // Opened from ノード詳細's 編集: done editing that one node, so close.
     if (editNode && managerOpenedForNode) {
+      closeManager();
+      return;
+    }
+    // Opened from the 記録シート's search to add that one node: back to the sheet.
+    if (!editNode && managerPrefillName) {
       closeManager();
       return;
     }

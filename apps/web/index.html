@@ -40,24 +40,21 @@
 // 骨組みとルーティングのみ (MAINTENANCE.md §3)。各画面は views/、画面をまたいで
 // 使う部品は components/、状態変数は state.js にある。
 import { supabase } from './lib/supabase.js';
-import { root, session, state, ui, cache, setSession, setRenderer, go, goBack } from './state.js';
+import { root, session, state, ui, cache, linesById, setSession, setRenderer, go } from './state.js';
 import { renderSummerDecor, renderHeader, wireHeader } from './components/header.js';
 import { toggleNodeHidden, toggleDisplayEditing } from './components/maskToggle.js';
 import { toggleNodeExpanded } from './components/collapsibleTree.js';
+import { captureLineDraft } from './components/recordForm.js';
 import { renderLoginPage, wireLogin } from './views/login.js';
 import { renderDashboardPage, wireDashboard } from './views/dashboard.js';
-import { renderRecordPage, wireRecord } from './views/record.js';
 import { fetchTxPage, renderTxListPage, wireTxList } from './views/transactions.js';
 import { renderNodesPage, wireNodesPage } from './views/nodes.js';
 import { renderDetailPage, wireDetailPage } from './views/nodeDetail.js';
 import { renderAnalysisPage, wireAnalysisPage } from './views/composition.js';
 import { renderSettingsPage, wireSettingsPage } from './views/settings.js';
 import { managerOpen, openManager, renderManagerModal, wireManagerModal } from './views/manager.js';
+import { openRecordSheet, openEditSheet, prepareSheet, renderSheet, wireSheet } from './views/recordSheet.js';
 
-// Snapshots the record/manager forms still in the DOM before render()
-// replaces it, so any re-render (tree ▸, 🙈, opening ノード管理 over 記録,
-// picker clicks, ...) keeps what the user typed. Skipped per form when a
-// handler flagged it to start fresh.
 // A toggle chip's state, or undefined when the chip isn't on screen (so the
 // form falls back to the saved value instead of a stale false).
 function chipDraft(id) {
@@ -65,15 +62,12 @@ function chipDraft(id) {
   return el ? el.getAttribute('aria-pressed') === 'true' : undefined;
 }
 
+// Snapshots the record sheet / manager forms still in the DOM before render()
+// replaces it, so any re-render (tree ▸, 🙈, opening ノード管理 over the sheet,
+// ...) keeps what the user typed. The manager form is skipped when a handler
+// flagged it to start fresh.
 function captureFormDrafts() {
-  const amountEl = document.getElementById('amount');
-  ui.recordDraft = !ui.resetRecordForm && amountEl ? {
-    amount: amountEl.value,
-    occurredOn: document.getElementById('occurred-on').value,
-    memo: document.getElementById('memo').value,
-    excludeFromFlowTotals: document.getElementById('exclude-from-flow').getAttribute('aria-pressed') === 'true',
-  } : null;
-  ui.resetRecordForm = false;
+  if (ui.sheet) ui.recordDraft = captureLineDraft() ?? ui.recordDraft;
 
   const nodeNameEl = document.getElementById('node-name');
   ui.managerDraft = !ui.resetManagerForm && nodeNameEl ? {
@@ -99,10 +93,6 @@ async function render() {
   let wire = () => {};
 
   switch (state.page) {
-    case 'record':
-      pageHtml = await renderRecordPage();
-      wire = wireRecord;
-      break;
     case 'tx':
       if (cache.txListRows.length === 0) await fetchTxPage(true);
       pageHtml = await renderTxListPage();
@@ -131,7 +121,15 @@ async function render() {
   }
 
   const managerHtml = managerOpen ? await renderManagerModal() : '';
-  root.innerHTML = `${renderSummerDecor()}<div class="app-shell">${renderHeader()}<main>${pageHtml}</main>${managerHtml}</div>`;
+  if (ui.sheet) await prepareSheet();
+  // Re-rendering the same page (state not replaced by go()) keeps the scroll
+  // position - e.g. after closing the sheet with a new line saved.
+  const keepScroll = state === renderedState;
+  const scrollY = window.scrollY;
+  root.innerHTML = `${renderSummerDecor()}<div class="app-shell">${renderHeader()}<main>${pageHtml}</main><div id="sheet-host">${renderSheet()}</div>${managerHtml}</div>`;
+  if (keepScroll) window.scrollTo(0, scrollY);
+  renderedState = state;
+  document.documentElement.classList.toggle('sheet-open', Boolean(ui.sheet));
   wireHeader();
   root.querySelectorAll('[data-node-hide-id]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
@@ -154,19 +152,38 @@ async function render() {
       openManager(el.dataset.openManager || null);
     });
   });
-  root.querySelectorAll('[data-go-back]').forEach((el) => {
-    el.addEventListener('click', goBack);
+  root.querySelectorAll('[data-open-record]').forEach((el) => {
+    el.addEventListener('click', openRecordSheet);
   });
   await wire();
+  wireSheet();
   if (managerOpen) await wireManagerModal();
 }
 
+let renderedState = null;
 setRenderer(render);
+
+// Any transaction row (data-line-id) opens the edit sheet. Delegated once on
+// root so rows swapped in place (取引一覧's search/load-more) need no rewiring.
+function openLineFromEvent(e) {
+  const el = e.target.closest('[data-line-id]');
+  if (!el || !root.contains(el)) return false;
+  openEditSheet(linesById.get(el.dataset.lineId));
+  return true;
+}
+root.addEventListener('click', openLineFromEvent);
+root.addEventListener('keydown', (e) => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('[data-line-id]') && openLineFromEvent(e)) e.preventDefault();
+});
+// 記録シートの検索結果「+ 新しいノードとして作成」(views は他の views を import しない)。
+document.addEventListener('kakeibo:open-manager', (e) => openManager(null, { name: e.detail?.name ?? '' }));
 
 const { data: { session: existingSession } } = await supabase.auth.getSession();
 if (existingSession) {
   setSession(existingSession);
-  go('record');
+  // ホーム画面のショートカット用: #record ならダッシュボードの上に記録シートを開いて起動する
+  if (location.hash === '#record') ui.sheet = { mode: 'record' };
+  go('dashboard');
 } else {
   render();
 }

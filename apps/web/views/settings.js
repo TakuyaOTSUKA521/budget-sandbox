@@ -4,7 +4,7 @@ import { supabase, memoKey } from '../lib/supabase.js';
 import { esc, todayISODate } from '../lib/format.js';
 import { NODE_TYPE_META } from '../lib/nodes.js';
 import {
-  session, pref, cache, setSession, setNodesById, setLinesById, setChartData, setTxListOffset, setTxListDone, go, render
+  session, pref, ui, cache, setSession, setNodesById, setLinesById, setChartData, setTxListOffset, setTxListDone, go, render
 } from '../state.js';
 import { segmented, wireSegmented } from '../components/segmented.js';
 import { confirmDialog } from '../components/confirmDialog.js';
@@ -12,33 +12,35 @@ import { CHART_MODES } from '../components/barChart.js';
 
 export function renderSettingsPage() {
   return `
-    <button type="button" class="back-link" data-go-back>← 戻る</button>
-    <div class="grid-fit-300">
-      <section class="card">
-        <h2 style="margin-bottom:14px;">表示</h2>
-        <div class="stack" style="gap:14px;">
-          <label class="field">既定の出どころ<select id="default-from-select"></select></label>
-          <div class="field">グラフの既定表示
-            <div>${segmented('default-chart-mode', CHART_MODES, pref.chartMode)}</div>
+    <div class="stack" style="gap:14px;">
+      <h1>設定</h1>
+      <div class="grid-fit-300">
+        <section class="card">
+          <h2 style="margin-bottom:14px;">表示</h2>
+          <div class="stack" style="gap:14px;">
+            <label class="field">既定の出どころ<select id="default-from-select"></select></label>
+            <div class="field">グラフの既定表示
+              <div>${segmented('default-chart-mode', CHART_MODES, pref.chartMode)}</div>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section class="card">
-        <h2 style="margin-bottom:14px;">データ</h2>
-        <div class="stack" style="gap:8px;align-items:flex-start;">
-          <button id="csv-export-btn" class="btn">取引をCSVで書き出す</button>
-          <button id="node-csv-export-btn" class="btn">ノード構成をCSVで書き出す</button>
-        </div>
-      </section>
+        <section class="card">
+          <h2 style="margin-bottom:14px;">データ</h2>
+          <div class="stack" style="gap:8px;align-items:flex-start;">
+            <button id="csv-export-btn" class="btn">取引をCSVで書き出す</button>
+            <button id="node-csv-export-btn" class="btn">ノード構成をCSVで書き出す</button>
+          </div>
+        </section>
 
-      <section class="card">
-        <h2 style="margin-bottom:14px;">アカウント</h2>
-        <div class="stack" style="gap:12px;align-items:flex-start;">
-          <span style="font-size:14px;color:var(--muted);overflow-wrap:anywhere;">${esc(session?.user?.email ?? '')}</span>
-          <button id="settings-logout-btn" class="btn btn-danger-text">ログアウト</button>
-        </div>
-      </section>
+        <section class="card">
+          <h2 style="margin-bottom:14px;">アカウント</h2>
+          <div class="stack" style="gap:12px;align-items:flex-start;">
+            <span style="font-size:14px;color:var(--muted);overflow-wrap:anywhere;">${esc(session?.user?.email ?? '')}</span>
+            <button id="settings-logout-btn" class="btn btn-danger-text">ログアウト</button>
+          </div>
+        </section>
+      </div>
     </div>
   `;
 }
@@ -162,6 +164,7 @@ async function handleLogout() {
   if (!ok) return;
   await supabase.auth.signOut();
   setSession(null);
+  ui.sheet = null;
   setNodesById(new Map());
   setLinesById(new Map());
   setChartData([]);

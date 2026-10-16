@@ -1,5 +1,5 @@
-import { root, session, state, go } from '../state.js';
-import { esc } from '../lib/format.js';
+import { root, state, go } from '../state.js';
+import { ICONS } from './iconButton.js';
 
 // Fixed decorative layer behind the app shell: soft white cloud/wave
 // silhouettes over the summer-sky gradient, per .web-ui-ref/Budget Sandbox -
@@ -14,36 +14,37 @@ export function renderSummerDecor() {
   `;
 }
 
-// Global nav tabs: same weight, always visible (see .webui-ref navigation
-// brief). 'nodes' stays highlighted on ノード詳細 too - that page is a child
-// of ノード一覧, not a separate top-level destination.
+// Global nav tabs: same weight, always visible. 'nodes' stays highlighted on
+// ノード詳細 too - that page is a child of ノード一覧, not a separate
+// top-level destination. 記録 is not a tab: it's the sheet behind 「+ 記録」.
 const NAV_TABS = [
   ['dashboard', 'ダッシュボード', ['dashboard']],
-  ['record', '記録', ['record']],
   ['tx', '取引一覧', ['tx']],
-  ['nodes', 'ノード一覧', ['nodes', 'detail']]
+  ['nodes', 'ノード一覧', ['nodes', 'detail']],
+  ['analysis', '分析', ['analysis']]
 ];
 
+// 1段のヘッダー: ロゴ・タブ・右にアプリ全体の操作「+ 記録」「設定」(README B2)。
+// 設定はタブではないが、開いている間はボタンを選択状態にして現在地を示す。
 export function renderHeader() {
   const tabsHtml = NAV_TABS.map(([id, label, owns]) => {
     const active = owns.includes(state.page);
-    return `<button type="button" class="nav-tab${active ? ' active' : ''}" data-nav="${id}">${label}</button>`;
+    return `<button type="button" class="nav-tab${active ? ' active' : ''}" data-nav="${id}"${active ? ' aria-current="page"' : ''}>${label}</button>`;
   }).join('');
+  const settingsOpen = state.page === 'settings';
 
   return `
     <header>
       <div class="header-inner">
         <button class="logo-btn" data-nav="dashboard">
           <span class="logo-text">Budget Sandbox</span>
-          <span class="logo-sub">家計簿</span>
         </button>
-        <div class="header-right">
-          <span>${esc(session?.user?.email ?? '')}</span>
-          <button type="button" class="header-link" data-nav="analysis">構成比</button>
-          <button type="button" class="header-link" data-nav="settings">設定</button>
+        <nav class="nav-tabs">${tabsHtml}</nav>
+        <div class="header-actions">
+          <button type="button" class="btn-record" data-open-record>+ 記録</button>
+          <button type="button" class="btn-settings" data-nav="settings" aria-pressed="${settingsOpen}">${ICONS.gear}設定</button>
         </div>
       </div>
-      <nav class="nav-tabs">${tabsHtml}</nav>
     </header>
   `;
 }

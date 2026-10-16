@@ -4,7 +4,7 @@ import { supabase, memoKey } from '../lib/supabase.js';
 import { esc } from '../lib/format.js';
 import { state, pref, nodesById, chartData, setChartData, render } from '../state.js';
 import { isNodeHidden, maskNodeYen } from '../components/maskToggle.js';
-import { renderTxRow, attachTxRowActions } from '../components/txRow.js';
+import { renderTxRow } from '../components/txRow.js';
 import { segmented, wireSegmented } from '../components/segmented.js';
 import { CHART_MODES, renderBarChartAxis, mountBarChart } from '../components/barChart.js';
 
@@ -60,7 +60,6 @@ export function wireDetailPage() {
   const valueKey = pref.chartMode === 'cumulative' ? 'cumulative_balance' : 'daily_delta';
   mountBarChart(chartData, valueKey, isNodeHidden(state.detailNodeId));
 
-  attachTxRowActions(document.getElementById('detail-lines'));
   wireSegmented('chart-mode', (value) => {
     pref.chartMode = value;
     localStorage.setItem('kakeibo:chartMode', pref.chartMode);

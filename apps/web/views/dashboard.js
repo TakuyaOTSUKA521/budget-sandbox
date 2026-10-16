@@ -2,11 +2,11 @@ import { getNetWorth, getRollupBalances, getNetWorthDaily, getMonthlyFlow, getDa
 import { supabase, memoKey } from '../lib/supabase.js';
 import { esc, yen, monthStart } from '../lib/format.js';
 import { loadAllNodesWithPaths, computeSpendingDestinations } from '../lib/nodes.js';
-import { root, state, pref, render } from '../state.js';
+import { state, pref, render } from '../state.js';
 import { periodRange } from '../components/periodSelector.js';
 import { periodSegment, wirePeriodSegment } from '../components/periodSegment.js';
 import { maskNodeYen, nodeHideToggleButton, netWorthToggleButton, toggleNetWorthHidden, displayEditButton } from '../components/maskToggle.js';
-import { renderTxRow, attachTxRowActions } from '../components/txRow.js';
+import { renderTxRow } from '../components/txRow.js';
 
 export async function renderDashboardPage() {
   const nodes = await loadAllNodesWithPaths();
@@ -83,10 +83,7 @@ export async function renderDashboardPage() {
           <h1>${monthLabel}</h1>
           <p class="page-meta" style="margin:2px 0 0;">${rangeLabel}</p>
         </div>
-        <div class="page-actions">
-          <button class="btn-primary" style="width:auto;" data-nav="record">記録する</button>
-          ${displayEditButton()}
-        </div>
+        <div class="page-actions">${displayEditButton()}</div>
       </div>
 
       <div class="grid-fit">
@@ -142,7 +139,6 @@ export async function renderDashboardPage() {
 }
 
 export function wireDashboard() {
-  attachTxRowActions(root);
   wirePeriodSegment('spend-period', (value) => {
     state.spendPeriod = value;
     render();

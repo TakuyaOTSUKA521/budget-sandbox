@@ -1,4 +1,4 @@
-const CACHE_NAME = 'budget-sandbox-shell-v3';
+const CACHE_NAME = 'budget-sandbox-shell-v4';
 const SHELL_ASSETS = [
   './',
   './index.html',
@@ -16,6 +16,7 @@ const SHELL_ASSETS = [
   './components/maskToggle.js',
   './components/periodSegment.js',
   './components/periodSelector.js',
+  './components/recordForm.js',
   './components/segmented.js',
   './components/toggleChip.js',
   './components/txRow.js',
@@ -25,7 +26,7 @@ const SHELL_ASSETS = [
   './views/manager.js',
   './views/nodeDetail.js',
   './views/nodes.js',
-  './views/record.js',
+  './views/recordSheet.js',
   './views/settings.js',
   './views/transactions.js',
   './packages/core/client.js',

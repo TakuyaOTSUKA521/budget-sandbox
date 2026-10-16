@@ -100,7 +100,7 @@ function compositionSection(title, entries) {
 // 構成比は「収支」(期間で絞り込む支出/収入)と「資産」(常に現在残高の資産/負債)
 // の2ビューに分ける。期間セレクタは収支ビューにだけ出す - 資産側の数値は期間に
 // よって変わらないので、同じ画面に並べるとセレクタが効いているように誤読される。
-// state.analysisView は go() でリセットされ、ヘッダの「構成比」からは常に収支で開く。
+// state.analysisView は go() でリセットされ、「分析」タブからは常に収支で開く。
 export async function renderAnalysisPage() {
   const view = state.analysisView ?? 'flow';
   const nodes = await loadAllNodesWithPaths();
@@ -157,10 +157,9 @@ export async function renderAnalysisPage() {
   }
 
   return `
-    <button type="button" class="back-link" data-go-back>← 戻る</button>
     <div class="stack" style="gap:14px;">
       <div class="page-head">
-        <h1>構成比</h1>
+        <h1>分析</h1>
         <div class="page-actions">${displayEditButton()}</div>
       </div>
       <div class="toolbar">

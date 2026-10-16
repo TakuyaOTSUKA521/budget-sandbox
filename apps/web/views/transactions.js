@@ -8,7 +8,6 @@ import {
 } from '../state.js';
 import { periodRange } from '../components/periodSelector.js';
 import { periodSegment, wirePeriodSegment } from '../components/periodSegment.js';
-import { attachTxRowActions } from '../components/txRow.js';
 
 const TX_PAGE_SIZE = 20;
 // supabase/config.toml の max_rows。これ以上は1回の select で返らないので分けて取る
@@ -94,7 +93,7 @@ function buildTxRows(rows) {
       const meta = TX_CLASS_META[classifyLine(l)];
       return `
       <div class="tx-table-row" data-line-id="${l.id}" role="button" tabindex="0">
-        <span class="mono" style="color:var(--muted);font-size:12.5px;"><span class="tx-type-dot" style="background:${meta.color};" title="${meta.label}"></span>${l.occurred_on}</span>
+        <span class="mono tx-date"><span class="tx-type-dot" style="background:${meta.color};" title="${meta.label}"></span>${l.occurred_on}</span>
         <span>${esc(l.from_name)}</span>
         <span>${esc(l.to_name)}</span>
         <span style="font-size:12.5px;color:var(--faint);">${esc(l.memo ?? '')}</span>
@@ -156,8 +155,6 @@ export async function renderTxListPage() {
 }
 
 export function wireTxList() {
-  attachTxRowActions(document.getElementById('tx-rows'));
-
   document.getElementById('tx-search').addEventListener('input', (e) => {
     state.txSearch = e.target.value;
     renderTxRowsInPlace();
@@ -212,5 +209,4 @@ function renderTxRowsInPlace() {
   const search = (state.txSearch ?? '').trim().toLowerCase();
   const rowsEl = document.getElementById('tx-rows');
   rowsEl.innerHTML = buildTxRows(filterTxRows(cache.txListRows, search));
-  attachTxRowActions(rowsEl);
 }
