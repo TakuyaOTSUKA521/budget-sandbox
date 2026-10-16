@@ -5,23 +5,37 @@ import { esc, yen } from '../lib/format.js';
 import { NODE_TYPE_META, computeSpendingDestinations } from '../lib/nodes.js';
 import { root, state, pref, go, render, invalidateTxCache } from '../state.js';
 import { SPEND_PERIODS, periodRange } from '../components/periodSelector.js';
-import { maskNodeYen, nodeHideToggleButton } from '../components/maskToggle.js';
+import { periodSegment, wirePeriodSegment } from '../components/periodSegment.js';
+import { maskNodeYen, nodeHideToggleButton, isDisplayEditing, displayEditButton } from '../components/maskToggle.js';
 import { treeToggleCell, renderNodeTree } from '../components/collapsibleTree.js';
+import { segmented, wireSegmented } from '../components/segmented.js';
+import { toggleChip, wireToggleChip } from '../components/toggleChip.js';
+import { ICONS } from '../components/iconButton.js';
+import { confirmDialog } from '../components/confirmDialog.js';
 
 // Card view only: 'all' shows every node (leaf and intermediate/group), 'leaf'
 // hides intermediate nodes so only the actual recording targets remain.
+// Shown as the 「最下層のみ」 toggle chip (on = 'leaf').
 let nodeCardFilter = localStorage.getItem('kakeibo:nodeCardFilter') || 'all';
 let showArchivedNodes = false;
 
 // Archiving (is_archived) removes a node from the node list entirely - unlike
 // the mask toggle (components/maskToggle.js), which only hides the amount. Meant for leaf nodes
-// that turned out to have no practical use; restorable via 復元.
-function nodeArchiveButton(nodeId) {
-  return `<button type="button" class="node-hide-btn" data-node-archive-id="${nodeId}" title="このノードをアーカイブ(一覧から隠す)">📦</button>`;
+// that turned out to have no practical use; restorable via 復元. Like the mask
+// toggle, only shown while 表示を編集 is on.
+function nodeArchiveButton(nodeId, name) {
+  if (!isDisplayEditing()) return '';
+  return `<button type="button" class="node-hide-btn" data-node-archive-id="${nodeId}" data-name="${esc(name)}" title="このノードをアーカイブ(一覧から隠す)">📦</button>`;
 }
 
-async function handleArchiveNode(nodeId) {
-  if (!confirm('このノードをアーカイブしますか？一覧から隠れます（記録は残ります）。')) return;
+async function handleArchiveNode(nodeId, name) {
+  const ok = await confirmDialog({
+    title: 'このノードをアーカイブしますか',
+    summaryHtml: `${esc(name)}<div style="margin-top:4px;font-size:12.5px;color:var(--muted);">一覧から隠れます。記録は残ります。</div>`,
+    confirmLabel: 'アーカイブ',
+    danger: false
+  });
+  if (!ok) return;
   await archiveNode(supabase, nodeId);
   await render();
 }
@@ -34,7 +48,11 @@ async function handleUnarchiveNode(nodeId) {
 // Same deletion as ノード管理 (nodes.js#deleteNode): supersedes every line touching
 // the node and hides it for good, archive list included (DESIGN.md「ノードの削除」).
 async function handleDeleteArchivedNode(nodeId, name) {
-  if (!confirm(`「${name}」を削除しますか？関連する取引もすべて削除されます（元に戻せません）。`)) return;
+  const ok = await confirmDialog({
+    title: 'このノードを削除しますか',
+    summaryHtml: `${esc(name)}<div style="margin-top:4px;font-size:12.5px;color:var(--muted);">関連する取引もすべて削除されます。元に戻せません。</div>`
+  });
+  if (!ok) return;
   try {
     await deleteNode(supabase, nodeId);
   } catch (error) {
@@ -74,7 +92,7 @@ const nodeRow = (balanceByNodeId, n, indent = 0, canArchive = false, hasChildren
     <span class="${indent ? 'indent-name' : ''}" style="flex:1;">${esc(n.name)}</span>
     <span class="mono">${maskNodeYen(n.id, balanceByNodeId.get(n.id))}</span>
     ${nodeHideToggleButton(n.id)}
-    ${canArchive ? nodeArchiveButton(n.id) : ''}
+    ${canArchive ? nodeArchiveButton(n.id, n.name) : ''}
   </div>
 `;
 
@@ -92,7 +110,7 @@ function nodeCard(n, balanceByNodeId, { showPath = true, maxAbs = 1, sparkline =
         </span>
         <span style="display:flex;">
           ${nodeHideToggleButton(n.id)}
-          ${canArchive ? nodeArchiveButton(n.id) : ''}
+          ${canArchive ? nodeArchiveButton(n.id, n.name) : ''}
         </span>
       </div>
       ${parentPath ? `<span class="path">${esc(parentPath)}</span>` : ''}
@@ -104,15 +122,16 @@ function nodeCard(n, balanceByNodeId, { showPath = true, maxAbs = 1, sparkline =
   `;
 }
 
-// Only a leaf node (no children) is safe to archive from here: hiding an
-// intermediate node would orphan its children from the flow tree render.
+// 復元・削除はアーカイブと同じく「表示を編集」中だけ出す(行にボタンを置かない)。
 function archivedRow(n) {
   return `
     <div class="row">
       <span style="flex:1;color:var(--faint);">${esc(n.name)}</span>
       <span style="font-size:11px;color:var(--faint);letter-spacing:0.03em;">${n.node_type}</span>
-      <button type="button" class="btn-sm" data-node-unarchive-id="${n.id}">復元</button>
-      <button type="button" class="btn-sm danger" data-node-delete-id="${n.id}" data-name="${esc(n.name)}">削除</button>
+      ${isDisplayEditing() ? `
+        <button type="button" class="btn-sm" data-node-unarchive-id="${n.id}">復元</button>
+        <button type="button" class="btn-sm danger" data-node-delete-id="${n.id}" data-name="${esc(n.name)}">削除</button>
+      ` : ''}
     </div>
   `;
 }
@@ -147,34 +166,27 @@ export async function renderNodesPage() {
 
   const archivedSection = showArchivedNodes ? `
     <section class="card">
-      <h3>アーカイブ済み</h3>
-      <p class="card-note">一覧・集計・入力候補には出てきません。記録は残っています。</p>
+      <h3 style="margin-bottom:6px;">アーカイブ済み</h3>
       ${archivedNodesList.map(archivedRow).join('') || '<p style="font-size:12.5px;color:var(--faint);">アーカイブ済みのノードはありません</p>'}
     </section>
   ` : '';
 
-  const viewToggle = `
-    <div class="view-toggle">
-      <button type="button" id="view-list-btn" class="btn${pref.nodeViewMode === 'list' ? ' selected' : ''}">リスト</button>
-      <button type="button" id="view-card-btn" class="btn${pref.nodeViewMode === 'card' ? ' selected' : ''}">カード</button>
-    </div>
-  `;
-
-  const pageHead = (note) => `
-    <div class="stack" style="gap:12px;">
-      <div class="card-head">
-        <div>
-          <h1>ノード一覧</h1>
-          <p style="margin:2px 0 0;font-size:12.5px;color:var(--muted);">${note}</p>
+  const isCard = pref.nodeViewMode === 'card';
+  const pageHead = `
+    <div class="stack" style="gap:14px;">
+      <div class="page-head">
+        <h1>ノード一覧</h1>
+        <div class="page-actions">
+          ${segmented('node-view-mode', [['list', ICONS.list, 'リスト'], ['card', ICONS.grid, 'グリッド']], pref.nodeViewMode, { html: true, icon: true, ariaLabel: '表示形式' })}
+          ${displayEditButton()}
+          <button type="button" class="btn" data-open-manager>ノードを管理</button>
         </div>
-        <button class="btn-primary" style="width:auto;" data-open-manager>ノードを編集・管理</button>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <button type="button" id="toggle-archived-btn" class="btn">${showArchivedNodes ? 'アーカイブ済みを隠す' : 'アーカイブ済みを表示'}</button>
-        ${viewToggle}
-        <select id="nodes-period-select" style="width:auto;padding:5px 8px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
-          ${Object.entries(SPEND_PERIODS).map(([value, label]) => `<option value="${value}" ${period === value ? 'selected' : ''}>${label}</option>`).join('')}
-        </select>
+      <div class="toolbar">
+        <span class="toolbar-label">絞り込み</span>
+        ${isCard ? toggleChip('filter-leaf-chip', '最下層のみ', { on: nodeCardFilter === 'leaf' }) : ''}
+        ${toggleChip('filter-archived-chip', 'アーカイブ済み', { on: showArchivedNodes })}
+        <div class="toolbar-end">${periodSegment('nodes-period', period)}</div>
       </div>
   `;
 
@@ -199,19 +211,8 @@ export async function renderNodesPage() {
       }))
       .join('');
 
-    const cardFilterToggle = `
-      <div class="view-toggle">
-        <button type="button" id="card-filter-all-btn" class="btn${nodeCardFilter === 'all' ? ' selected' : ''}">すべて</button>
-        <button type="button" id="card-filter-leaf-btn" class="btn${nodeCardFilter === 'leaf' ? ' selected' : ''}">最下層のみ</button>
-      </div>
-    `;
-
     return `
-      ${pageHead(`残高の推移(折れ線)・大きさ順に並んでいます。色は資産/負債/収支。子ノードを持つカードは破線で「内訳(合計)」と表示されます。金額は資産・負債が現在残高、収支が${flowAmountLabel}です。`)}
-        <div style="display:flex;gap:8px;align-items:center;margin-top:-4px;">
-          <span style="font-size:11.5px;color:var(--faint);">表示するノード</span>
-          ${cardFilterToggle}
-        </div>
+      ${pageHead}
         <div class="node-card-grid">${cardsHtml || '<p style="font-size:12.5px;color:var(--faint);">ノードがありません</p>'}</div>
         ${archivedSection}
       </div>
@@ -236,7 +237,7 @@ export async function renderNodesPage() {
           <h3>${label}</h3>
           <span class="mono" style="font-size:12.5px;${totalColor}">${yen(total)}</span>
         </div>
-        <p class="card-note">${note}</p>
+        ${note ? `<p class="card-note">${note}</p>` : ''}
         ${rows || '<p style="font-size:12.5px;color:var(--faint);">ノードがありません</p>'}
       </section>
     `;
@@ -247,16 +248,16 @@ export async function renderNodesPage() {
   const spendRows = spendingDestinations.map((n) => nodeRow(balanceByNodeId, n, 0, canArchive(n))).join('');
 
   return `
-    ${pageHead(`資産・負債は現在残高、支出・収入は${flowAmountLabel}です(期間の選択は支出・収入にのみ効きます)。子を持つ行は▸で展開できます。`)}
+    ${pageHead}
       <div class="grid-fit-300">
-        ${hierarchySection('資産', '財布・銀行・電子マネーなど', byType.asset)}
-        ${hierarchySection('負債', '未払いのクレジット残など', byType.liability, 'color:var(--negative);')}
+        ${hierarchySection('資産', '', byType.asset)}
+        ${hierarchySection('負債', '', byType.liability, 'color:var(--negative);')}
         <section class="card">
           <div class="card-head">
             <h3>消費相手（多い順）</h3>
             <span class="mono" style="font-size:12.5px;color:var(--negative);">${yen(spendTotal)}</span>
           </div>
-          <p class="card-note">flow の葉ノード・${period === 'all' ? '残高' : `${SPEND_PERIODS[period]}の増減`}が正のもの</p>
+          <p class="card-note">${SPEND_PERIODS[period]}</p>
           ${spendRows || '<p style="font-size:12.5px;color:var(--faint);">記録がありません</p>'}
         </section>
         ${hierarchySection('支出・収入（階層）', flowAmountLabel, byType.flow)}
@@ -267,46 +268,32 @@ export async function renderNodesPage() {
 }
 
 export function wireNodesPage() {
-  const listBtn = document.getElementById('view-list-btn');
-  const cardBtn = document.getElementById('view-card-btn');
-  listBtn.addEventListener('click', () => {
-    pref.nodeViewMode = 'list';
-    localStorage.setItem('kakeibo:nodeViewMode', pref.nodeViewMode);
-    render();
-  });
-  cardBtn.addEventListener('click', () => {
-    pref.nodeViewMode = 'card';
+  wireSegmented('node-view-mode', (value) => {
+    pref.nodeViewMode = value;
     localStorage.setItem('kakeibo:nodeViewMode', pref.nodeViewMode);
     render();
   });
 
-  document.getElementById('toggle-archived-btn').addEventListener('click', () => {
-    showArchivedNodes = !showArchivedNodes;
+  wireToggleChip('filter-archived-chip', (on) => {
+    showArchivedNodes = on;
     render();
   });
 
-  document.getElementById('nodes-period-select').addEventListener('change', (e) => {
-    state.nodesPeriod = e.target.value;
+  wireToggleChip('filter-leaf-chip', (on) => {
+    nodeCardFilter = on ? 'leaf' : 'all';
+    localStorage.setItem('kakeibo:nodeCardFilter', nodeCardFilter);
     render();
   });
 
-  const cardFilterAllBtn = document.getElementById('card-filter-all-btn');
-  const cardFilterLeafBtn = document.getElementById('card-filter-leaf-btn');
-  cardFilterAllBtn?.addEventListener('click', () => {
-    nodeCardFilter = 'all';
-    localStorage.setItem('kakeibo:nodeCardFilter', nodeCardFilter);
-    render();
-  });
-  cardFilterLeafBtn?.addEventListener('click', () => {
-    nodeCardFilter = 'leaf';
-    localStorage.setItem('kakeibo:nodeCardFilter', nodeCardFilter);
+  wirePeriodSegment('nodes-period', (value) => {
+    state.nodesPeriod = value;
     render();
   });
 
   root.querySelectorAll('[data-node-archive-id]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      handleArchiveNode(btn.dataset.nodeArchiveId);
+      handleArchiveNode(btn.dataset.nodeArchiveId, btn.dataset.name);
     });
   });
 

@@ -31,8 +31,12 @@ Vibe Coding(Claude Codeによる継続的な機能追加)で起きがちな劣�
 - 分類に判断が必要: `nodeCardFilter`(pref.*寄りだがlocalStorage永続の確認要)、
   `expandedNodeIds` / `prevPage`(4分類のどれにも寿命がきれいに一致しない。
   4分類を拡張するか、変数の寿命設計自体を見直すか要判断)、`showArchivedNodes` /
-  `selectedToNode` / `editingLineId` / `managerOpen` / `managerFrom` /
+  `selectedToNode` / `editingLineId` / `managerOpen` / `managerOpenedForNode` /
   `managerEditNode` / `managerPendingPromote`(ui.*寄りだが数クリックより長寿命)
+  (`managerFrom` は2026-10-17の整理で、表示先の説明文と一緒に削除した)
+
+2026-10-17 の UI 整理で増えた状態は分類どおりに置いた: 「表示を編集」の
+`state.displayEditing`(ページ遷移で解除したいので `state.*`)。
 
 2026-09-28のファイル分割(§3)で、これらの未分類変数は名前を変えずに置き場所だけ
 移した。リネーム時はこの対応を起点にする:
@@ -44,7 +48,7 @@ Vibe Coding(Claude Codeによる継続的な機能追加)で起きがちな劣�
 - 1ファイル内でしか使わないものはそのファイルのモジュール変数:
   `nodeCardFilter` / `showArchivedNodes`(views/nodes.js)、`expandedNodeIds`
   (components/collapsibleTree.js)、`editingLineId` / `recordLeafNodeIds`
-  (views/record.js)、`managerOpen` / `managerFrom` / `managerEditNode` /
+  (views/record.js)、`managerOpen` / `managerOpenedForNode` / `managerEditNode` /
   `managerPendingPromote`(views/manager.js)、`prevPage`(state.js、非公開)
 - `cache.*` にまとめる際は `set*()` も不要になる(オブジェクトのプロパティ代入は
   import先からでもできる)
@@ -69,6 +73,14 @@ Vibe Coding(Claude Codeによる継続的な機能追加)で起きがちな劣�
 期間セレクタは3画面で非連動という既知の制限がある。統一するかどうかは
 UXの判断が要るため、抽出だけ行い連動させるかは別途判断する。
 
+**2026-10-17 の整理で済んだもの**(`design_handoff_ui_refresh/02_cleanup.md` を承認済みの
+仕様として実施): 期間セレクタは `components/periodSegment.js` に抽出し4画面を置き換えた
+(連動はさせない — 画面ごとに状態を持つ方針で確定)。マスクトグルは
+`maskToggle.js` の「表示を編集」中だけ出す形に統一した。あわせてセグメント
+(`segmented.js`)・トグルチップ(`toggleChip.js`)・アイコンボタン(`iconButton.js`)・
+確認ダイアログ(`confirmDialog.js`、`window.confirm()` をすべて置き換え)を作った。
+残りはカード + `.card-head` とページネーション。
+
 ## 3. ファイル分割
 
 **2026-09-28に実施済み。** `apps/web/index.html`(約2600行)を、ビルド不要のまま
@@ -87,8 +99,11 @@ apps/web/
 │   ├── composition.js / settings.js(CSV書き出し・ログアウト含む)
 │   └── manager.js          ノード管理モーダル
 ├── components/
-│   ├── maskToggle.js / periodSelector.js / collapsibleTree.js
-│   ├── txRow.js            取引行の描画・編集/削除ボタン
+│   ├── maskToggle.js       マスク・「表示を編集」
+│   ├── periodSelector.js / periodSegment.js   期間の範囲計算 / 期間セグメント
+│   ├── segmented.js / toggleChip.js / iconButton.js / confirmDialog.js
+│   ├── collapsibleTree.js
+│   ├── txRow.js            取引行の描画・行タップで編集へ
 │   ├── barChart.js         ノード詳細の棒グラフ
 │   └── header.js           ヘッダ・ナビタブ・背景装飾
 └── lib/
@@ -101,8 +116,8 @@ apps/web/
 
 - `components/cardHead.js` は作っていない。`.card-head` は関数ではなくHTMLに
   直書きされたクラスなので、関数化は §2 の重複排除として別途行う
-- 期間セレクタの `<select>` も各画面に直書きのまま。`periodSelector.js` には
-  既存の共有部分(`SPEND_PERIODS` / `periodRange`)だけを置いた(統一は §2)
+- 期間セレクタは当初 `periodSelector.js` に共有部分(`SPEND_PERIODS` /
+  `periodRange`)だけを置いていた。2026-10-17 に `periodSegment.js` へ抽出済み(§2)
 - ドーナツ図(composition.js)・スパークライン(nodes.js)は1画面でしか使わない
   ためview側に残した
 

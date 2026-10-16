@@ -6,7 +6,8 @@ import {
   state, cache, nodesById, linesById, txListOffset, txListDone, setTxListOffset, setTxListDone,
   invalidateTxCache, render
 } from '../state.js';
-import { SPEND_PERIODS, periodRange } from '../components/periodSelector.js';
+import { periodRange } from '../components/periodSelector.js';
+import { periodSegment, wirePeriodSegment } from '../components/periodSegment.js';
 import { attachTxRowActions } from '../components/txRow.js';
 
 const TX_PAGE_SIZE = 20;
@@ -92,16 +93,13 @@ function buildTxRows(rows) {
     .map((l) => {
       const meta = TX_CLASS_META[classifyLine(l)];
       return `
-      <div class="tx-table-row">
+      <div class="tx-table-row" data-line-id="${l.id}" role="button" tabindex="0">
         <span class="mono" style="color:var(--muted);font-size:12.5px;"><span class="tx-type-dot" style="background:${meta.color};" title="${meta.label}"></span>${l.occurred_on}</span>
         <span>${esc(l.from_name)}</span>
         <span>${esc(l.to_name)}</span>
         <span style="font-size:12.5px;color:var(--faint);">${esc(l.memo ?? '')}</span>
         <span class="mono" style="text-align:right;color:${meta.color};">${yen(l.amount)}</span>
-        <span style="display:flex;gap:4px;justify-content:flex-end;">
-          <button type="button" class="btn-sm tx-edit" data-id="${l.id}">編集</button>
-          <button type="button" class="btn-sm danger tx-delete" data-id="${l.id}">削除</button>
-        </span>
+        <span class="chev" aria-hidden="true">›</span>
       </div>
     `;
     })
@@ -109,7 +107,7 @@ function buildTxRows(rows) {
 }
 
 function txListCountText() {
-  return `読み込み済み ${cache.txListRows.length} 件・${SPEND_PERIODS[cache.txPeriod]}`;
+  return `${cache.txListRows.length} 件`;
 }
 
 function txListFooterHtml() {
@@ -128,38 +126,32 @@ export async function renderTxListPage() {
   const search = (state.txSearch ?? '').trim().toLowerCase();
   const filtered = filterTxRows(cache.txListRows, search);
 
-  const periodSelect = `
-    <select id="tx-period-select" style="width:auto;padding:5px 8px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
-      ${Object.entries(SPEND_PERIODS).map(([value, label]) => `<option value="${value}" ${period === value ? 'selected' : ''}>${label}</option>`).join('')}
-    </select>
-  `;
-
   return `
-    <section class="card">
-      <div class="card-head">
-        <div>
+    <div class="stack" style="gap:14px;">
+      <div class="page-head">
+        <div style="display:flex;align-items:baseline;gap:12px;">
           <h1>取引一覧</h1>
-          <p id="tx-list-count" style="margin:2px 0 0;font-size:12.5px;color:var(--muted);">${txListCountText()}</p>
+          <span id="tx-list-count" class="page-meta">${txListCountText()}</span>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-          ${periodSelect}
-          <input id="tx-search" type="text" placeholder="メモ・ノードで検索" value="${esc(state.txSearch ?? '')}" style="padding:8px 11px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);min-width:180px;">
-        </div>
+        <input id="tx-search" class="toolbar-search" type="text" placeholder="メモ・ノードで検索" value="${esc(state.txSearch ?? '')}">
       </div>
-      <div class="legend" style="margin-top:8px;">
-        <span><span class="swatch" style="background:var(--negative);"></span>支出</span>
-        <span><span class="swatch" style="background:var(--accent);"></span>収入</span>
-        <span><span class="swatch" style="background:var(--secondary);"></span>振替</span>
+      <div class="toolbar">
+        <div class="legend" style="margin:0;">
+          <span><span class="swatch" style="background:var(--negative);"></span>支出</span>
+          <span><span class="swatch" style="background:var(--accent);"></span>収入</span>
+          <span><span class="swatch" style="background:var(--secondary);"></span>振替</span>
+        </div>
+        <div class="toolbar-end toolbar-fixed-width">${periodSegment('tx-period', period)}</div>
       </div>
 
-      <div style="margin-top:12px;">
+      <section class="card" style="padding-top:8px;">
         <div class="tx-table-head">
           <span>日付</span><span>出どころ</span><span>行き先</span><span>メモ</span><span style="text-align:right;">金額</span><span></span>
         </div>
         <div id="tx-rows">${buildTxRows(filtered)}</div>
-        <div id="tx-list-footer" style="display:flex;justify-content:center;padding:16px 0 18px;">${txListFooterHtml()}</div>
-      </div>
-    </section>
+        <div id="tx-list-footer" style="display:flex;justify-content:center;padding:16px 0 10px;">${txListFooterHtml()}</div>
+      </section>
+    </div>
   `;
 }
 
@@ -172,8 +164,8 @@ export function wireTxList() {
     searchAllIfNeeded();
   });
 
-  document.getElementById('tx-period-select').addEventListener('change', async (e) => {
-    cache.txPeriod = e.target.value;
+  wirePeriodSegment('tx-period', async (value) => {
+    cache.txPeriod = value;
     invalidateTxCache();
     await render();
   });

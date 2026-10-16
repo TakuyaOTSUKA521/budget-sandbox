@@ -10,6 +10,9 @@ const BAR_CHART_VISIBLE_DAYS = 30;
 const BAR_CHART_LABEL_GAP = 8;
 const MS_PER_DAY = 86400000;
 
+// pref.chartMode の選択肢(ノード詳細の切替と設定の既定表示で共用)。
+export const CHART_MODES = [['cumulative', '累積推移'], ['daily', '1日あたり推移']];
+
 // Tick intervals tried in order, finest first. All are calendar-aligned (not
 // "every N days from the first bar") so ticks line up with the month dividers.
 // `span` is the nominal day distance between ticks, used to pick the finest

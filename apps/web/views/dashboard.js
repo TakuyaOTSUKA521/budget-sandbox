@@ -3,8 +3,9 @@ import { supabase, memoKey } from '../lib/supabase.js';
 import { esc, yen, monthStart } from '../lib/format.js';
 import { loadAllNodesWithPaths, computeSpendingDestinations } from '../lib/nodes.js';
 import { root, state, pref, render } from '../state.js';
-import { SPEND_PERIODS, periodRange } from '../components/periodSelector.js';
-import { maskNodeYen, nodeHideToggleButton, netWorthToggleButton, toggleNetWorthHidden } from '../components/maskToggle.js';
+import { periodRange } from '../components/periodSelector.js';
+import { periodSegment, wirePeriodSegment } from '../components/periodSegment.js';
+import { maskNodeYen, nodeHideToggleButton, netWorthToggleButton, toggleNetWorthHidden, displayEditButton } from '../components/maskToggle.js';
 import { renderTxRow, attachTxRowActions } from '../components/txRow.js';
 
 export async function renderDashboardPage() {
@@ -69,12 +70,6 @@ export async function renderDashboardPage() {
     })
     .join('') || '<p style="font-size:13px;color:var(--faint);">この期間の記録がありません</p>';
 
-  const spendPeriodSelect = `
-    <select id="spend-period-select" style="width:auto;padding:5px 8px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
-      ${Object.entries(SPEND_PERIODS).map(([value, label]) => `<option value="${value}" ${spendPeriod === value ? 'selected' : ''}>${label}</option>`).join('')}
-    </select>
-  `;
-
   const recentRows = recentLines.map((l) => renderTxRow(l)).join('') || '<p style="font-size:13px;color:var(--faint);">まだ記録がありません</p>';
 
   const today = new Date();
@@ -83,12 +78,15 @@ export async function renderDashboardPage() {
 
   return `
     <div class="stack">
-      <div class="card-head">
+      <div class="page-head">
         <div>
           <h1>${monthLabel}</h1>
-          <p style="margin:2px 0 0;font-size:12.5px;color:var(--muted);">${rangeLabel}</p>
+          <p class="page-meta" style="margin:2px 0 0;">${rangeLabel}</p>
         </div>
-        <button class="btn-primary" style="width:auto;" data-nav="record">記録する</button>
+        <div class="page-actions">
+          <button class="btn-primary" style="width:auto;" data-nav="record">記録する</button>
+          ${displayEditButton()}
+        </div>
       </div>
 
       <div class="grid-fit">
@@ -122,22 +120,20 @@ export async function renderDashboardPage() {
           ` : ''}
         </section>
 
-        <section class="card">
+        <section class="card card-flex">
           <div class="card-head">
             <h2>消費相手 上位</h2>
-            <div style="display:flex;gap:6px;align-items:center;">
-              ${spendPeriodSelect}
-              <button class="btn" style="width:auto;padding:5px 11px;font-size:11.5px;" data-nav="nodes">ノード一覧</button>
-            </div>
+            ${periodSegment('spend-period', spendPeriod)}
           </div>
-          <div style="margin-top:10px;">${topSpendRows}</div>
+          <div style="margin-top:10px;flex:1;">${topSpendRows}</div>
+          <div class="card-foot"><a href="#" data-nav="nodes">すべて見る ›</a></div>
         </section>
       </div>
 
       <section class="card">
         <div class="card-head">
           <h2>最近の記録</h2>
-          <a href="#" data-nav="tx">すべて見る</a>
+          <a href="#" data-nav="tx">すべて見る ›</a>
         </div>
         <div style="margin-top:8px;">${recentRows}</div>
       </section>
@@ -147,9 +143,9 @@ export async function renderDashboardPage() {
 
 export function wireDashboard() {
   attachTxRowActions(root);
-  document.getElementById('spend-period-select').addEventListener('change', (e) => {
-    state.spendPeriod = e.target.value;
+  wirePeriodSegment('spend-period', (value) => {
+    state.spendPeriod = value;
     render();
   });
-  document.getElementById('net-worth-hide-btn').addEventListener('click', toggleNetWorthHidden);
+  document.getElementById('net-worth-hide-btn')?.addEventListener('click', toggleNetWorthHidden);
 }

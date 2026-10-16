@@ -42,7 +42,7 @@
 import { supabase } from './lib/supabase.js';
 import { root, session, state, ui, cache, setSession, setRenderer, go, goBack } from './state.js';
 import { renderSummerDecor, renderHeader, wireHeader } from './components/header.js';
-import { toggleNodeHidden } from './components/maskToggle.js';
+import { toggleNodeHidden, toggleDisplayEditing } from './components/maskToggle.js';
 import { toggleNodeExpanded } from './components/collapsibleTree.js';
 import { renderLoginPage, wireLogin } from './views/login.js';
 import { renderDashboardPage, wireDashboard } from './views/dashboard.js';
@@ -58,13 +58,20 @@ import { managerOpen, openManager, renderManagerModal, wireManagerModal } from '
 // replaces it, so any re-render (tree ▸, 🙈, opening ノード管理 over 記録,
 // picker clicks, ...) keeps what the user typed. Skipped per form when a
 // handler flagged it to start fresh.
+// A toggle chip's state, or undefined when the chip isn't on screen (so the
+// form falls back to the saved value instead of a stale false).
+function chipDraft(id) {
+  const el = document.getElementById(id);
+  return el ? el.getAttribute('aria-pressed') === 'true' : undefined;
+}
+
 function captureFormDrafts() {
   const amountEl = document.getElementById('amount');
   ui.recordDraft = !ui.resetRecordForm && amountEl ? {
     amount: amountEl.value,
     occurredOn: document.getElementById('occurred-on').value,
     memo: document.getElementById('memo').value,
-    excludeFromFlowTotals: document.getElementById('exclude-from-flow').checked,
+    excludeFromFlowTotals: document.getElementById('exclude-from-flow').getAttribute('aria-pressed') === 'true',
   } : null;
   ui.resetRecordForm = false;
 
@@ -74,6 +81,8 @@ function captureFormDrafts() {
     parentId: document.getElementById('node-parent-select').value || null,
     nodeType: document.getElementById('node-type-select').value,
     excludeFromFlowTotals: document.getElementById('node-exclude-flow').checked,
+    hidden: chipDraft('node-hidden-chip'),
+    archive: chipDraft('node-archive-chip'),
   } : null;
   ui.resetManagerForm = false;
 }
@@ -129,6 +138,9 @@ async function render() {
       e.stopPropagation();
       toggleNodeHidden(btn.dataset.nodeHideId);
     });
+  });
+  root.querySelectorAll('[data-display-edit]').forEach((btn) => {
+    btn.addEventListener('click', toggleDisplayEditing);
   });
   root.querySelectorAll('[data-tree-toggle-id]').forEach((btn) => {
     btn.addEventListener('click', (e) => {

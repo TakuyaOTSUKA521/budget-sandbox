@@ -1,4 +1,4 @@
-const CACHE_NAME = 'budget-sandbox-shell-v2';
+const CACHE_NAME = 'budget-sandbox-shell-v3';
 const SHELL_ASSETS = [
   './',
   './index.html',
@@ -10,9 +10,14 @@ const SHELL_ASSETS = [
   './lib/supabase.js',
   './components/barChart.js',
   './components/collapsibleTree.js',
+  './components/confirmDialog.js',
   './components/header.js',
+  './components/iconButton.js',
   './components/maskToggle.js',
+  './components/periodSegment.js',
   './components/periodSelector.js',
+  './components/segmented.js',
+  './components/toggleChip.js',
   './components/txRow.js',
   './views/composition.js',
   './views/dashboard.js',

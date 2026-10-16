@@ -4,53 +4,40 @@ import { supabase, memoKey } from '../lib/supabase.js';
 import { esc, todayISODate } from '../lib/format.js';
 import { NODE_TYPE_META } from '../lib/nodes.js';
 import {
-  session, pref, cache, setSession, setNodesById, setLinesById, setChartData, setTxListOffset, setTxListDone, go
+  session, pref, cache, setSession, setNodesById, setLinesById, setChartData, setTxListOffset, setTxListDone, go, render
 } from '../state.js';
+import { segmented, wireSegmented } from '../components/segmented.js';
+import { confirmDialog } from '../components/confirmDialog.js';
+import { CHART_MODES } from '../components/barChart.js';
 
 export function renderSettingsPage() {
-  const defaultFrom = localStorage.getItem('kakeibo:defaultFromNodeId') ?? '';
-
   return `
     <button type="button" class="back-link" data-go-back>← 戻る</button>
     <div class="grid-fit-300">
       <section class="card">
-        <h1 style="margin-bottom:16px;">アカウント</h1>
+        <h2 style="margin-bottom:14px;">表示</h2>
         <div class="stack" style="gap:14px;">
-          <label class="field">メールアドレス<input type="email" value="${esc(session?.user?.email ?? '')}" disabled></label>
+          <label class="field">既定の出どころ<select id="default-from-select"></select></label>
+          <div class="field">グラフの既定表示
+            <div>${segmented('default-chart-mode', CHART_MODES, pref.chartMode)}</div>
+          </div>
         </div>
       </section>
 
       <section class="card">
-        <h2 style="margin-bottom:10px;">表示</h2>
-        <div class="row">
-          <div><div>通貨</div><div style="font-size:11.5px;color:var(--faint);">金額の表示形式</div></div>
-          <span class="btn" style="width:auto;cursor:default;">JPY ¥</span>
-        </div>
-        <div class="row">
-          <div><div>月の開始日</div><div style="font-size:11.5px;color:var(--faint);">集計の区切り</div></div>
-          <span class="btn" style="width:auto;cursor:default;">1 日</span>
-        </div>
-        <div class="row">
-          <div><div>既定の出どころ</div><div style="font-size:11.5px;color:var(--faint);">記録画面の初期値(この端末のみ)</div></div>
-          <select id="default-from-select" style="width:auto;padding:5px 10px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);"></select>
-        </div>
-        <div class="row">
-          <div><div>グラフの既定表示</div><div style="font-size:11.5px;color:var(--faint);">ノード詳細(この端末のみ)</div></div>
-          <select id="default-chart-select" style="width:auto;padding:5px 10px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
-            <option value="cumulative" ${pref.chartMode === 'cumulative' ? 'selected' : ''}>累積推移</option>
-            <option value="daily" ${pref.chartMode === 'daily' ? 'selected' : ''}>1日あたり推移</option>
-          </select>
-        </div>
-      </section>
-
-      <section class="card">
-        <h2 style="margin-bottom:10px;">データ</h2>
+        <h2 style="margin-bottom:14px;">データ</h2>
         <div class="stack" style="gap:8px;align-items:flex-start;">
           <button id="csv-export-btn" class="btn">取引をCSVで書き出す</button>
           <button id="node-csv-export-btn" class="btn">ノード構成をCSVで書き出す</button>
-          <button id="settings-logout-btn" class="btn-danger-outline">ログアウト</button>
         </div>
-        <p style="margin:16px 0 0;font-size:11.5px;color:var(--faint);line-height:1.7;">記録は Supabase に保存され、memoは端末上で暗号化されます。</p>
+      </section>
+
+      <section class="card">
+        <h2 style="margin-bottom:14px;">アカウント</h2>
+        <div class="stack" style="gap:12px;align-items:flex-start;">
+          <span style="font-size:14px;color:var(--muted);overflow-wrap:anywhere;">${esc(session?.user?.email ?? '')}</span>
+          <button id="settings-logout-btn" class="btn btn-danger-text">ログアウト</button>
+        </div>
       </section>
     </div>
   `;
@@ -63,9 +50,10 @@ export async function wireSettingsPage() {
   fromSelect.innerHTML = leaves.map((n) => `<option value="${n.id}" ${n.id === currentDefault ? 'selected' : ''}>${esc(n.name)}</option>`).join('');
   fromSelect.addEventListener('change', (e) => localStorage.setItem('kakeibo:defaultFromNodeId', e.target.value));
 
-  document.getElementById('default-chart-select').addEventListener('change', (e) => {
-    pref.chartMode = e.target.value;
+  wireSegmented('default-chart-mode', (value) => {
+    pref.chartMode = value;
     localStorage.setItem('kakeibo:chartMode', pref.chartMode);
+    render();
   });
 
   document.getElementById('csv-export-btn').addEventListener('click', handleExportCsv);
@@ -170,6 +158,8 @@ async function handleExportNodesCsv() {
 // (decrypted memo, amounts, balance history included) would otherwise still
 // sit in memory even though the UI has moved back to the login page.
 async function handleLogout() {
+  const ok = await confirmDialog({ title: 'ログアウトしますか', summaryHtml: esc(session?.user?.email ?? ''), confirmLabel: 'ログアウト' });
+  if (!ok) return;
   await supabase.auth.signOut();
   setSession(null);
   setNodesById(new Map());

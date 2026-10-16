@@ -1,11 +1,13 @@
 import { getLeafNodes, getNodeSuggestions, searchNodes } from '../packages/core/nodes.js';
-import { recordLine, reviseLine } from '../packages/core/lines.js';
+import { recordLine, reviseLine, deleteLine } from '../packages/core/lines.js';
 import { listLines } from '../packages/core/reports.js';
 import { supabase, memoKey } from '../lib/supabase.js';
 import { esc, todayISODate } from '../lib/format.js';
 import { NODE_TYPE_META } from '../lib/nodes.js';
 import { root, state, ui, nodesById, selectedToNode, setSelectedToNode, invalidateTxCache, render } from '../state.js';
 import { renderTxRow, attachTxRowActions } from '../components/txRow.js';
+import { toggleChip, wireToggleChip, isToggleChipOn } from '../components/toggleChip.js';
+import { confirmDialog, lineSummary } from '../components/confirmDialog.js';
 
 let editingLineId = null;
 // Leaf-node ids valid as a line endpoint, refreshed on every renderRecordPage
@@ -82,7 +84,7 @@ export async function renderRecordPage() {
 
   // 集計から除外 only means something when one endpoint is a flow node (the DB
   // rejects it otherwise - see DESIGN.md 仕訳パターン「集計から除外する取引」),
-  // so the checkbox is disabled, not hidden, until such a node is picked.
+  // so the chip is disabled, not hidden, until such a node is picked.
   const nodeTypeOf = (id) => leafNodes.find((n) => n.id === id)?.node_type ?? nodesById.get(id)?.node_type;
   const hasFlowEndpoint = [ui.selectedFromNode?.id, selectedToNode?.id].some((id) => id && nodeTypeOf(id) === 'flow');
   const excludeChecked = hasFlowEndpoint && (draft?.excludeFromFlowTotals ?? editLine?.exclude_from_flow_totals ?? false);
@@ -102,8 +104,7 @@ export async function renderRecordPage() {
           <h1>記録</h1>
           <button type="button" class="btn" style="width:auto;" data-open-manager>ノードを追加</button>
         </div>
-        <p style="margin:2px 0 20px;font-size:12.5px;color:var(--muted);">お金の出どころと行き先を選んで金額を入れます。</p>
-        <div class="stack" style="gap:18px;">
+        <div class="stack" style="gap:18px;margin-top:16px;">
           <div class="slot-row">
             <button type="button" class="slot-btn${isFromSlot ? ' active' : ''}" id="from-slot-btn">
               <span class="slot-label">出どころ</span>
@@ -117,14 +118,10 @@ export async function renderRecordPage() {
           </div>
 
           <div class="candidate-box">
-            <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;">
-              <span style="font-size:12px;font-weight:700;">${isFromSlot ? '出どころの候補' : '行き先の候補'}</span>
-              <span style="font-size:11px;color:var(--faint);">${isFromSlot ? '資産・負債' : '使用頻度順'}</span>
-            </div>
+            <span style="font-size:12px;font-weight:700;">${isFromSlot ? '出どころの候補' : '行き先の候補'}</span>
             <div class="chip-row" id="candidate-chips">${isFromSlot ? fromChips : toChips}</div>
             <input id="to-search" type="text" placeholder="${isFromSlot ? '出どころを検索（財布、銀行、初期値...）' : '行き先を検索（食費、マクドナルド...）'}">
             <div class="search-results" id="search-results"></div>
-            <p style="margin:0;font-size:11px;color:var(--faint);line-height:1.6;">${isFromSlot ? 'すべてのノードから検索できます。選ぶと行き先の候補に切り替わります。' : 'すべてのノードから検索できます。'}</p>
           </div>
 
           <div class="grid-fit" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr);">
@@ -134,30 +131,24 @@ export async function renderRecordPage() {
 
           <label class="field">メモ<input id="memo" type="text" placeholder="任意" value="${esc(memoValue)}"></label>
 
-          <label class="field">
-            <span style="display:flex;align-items:flex-start;gap:8px;font-weight:400;${hasFlowEndpoint ? '' : 'color:var(--faint);'}">
-              <input type="checkbox" id="exclude-from-flow" style="flex:0 0 auto;margin-top:3px;" ${excludeChecked ? 'checked' : ''} ${hasFlowEndpoint ? '' : 'disabled'}>
-              <span style="flex:1;">収支の集計・構成比から除外する
-                <span style="display:block;font-size:11px;color:var(--faint);line-height:1.6;">${hasFlowEndpoint
-                  ? '残高は明細どおり動きます。全額が自分の収支でない取引(代わりに払っただけ等)に使います。割り勘は自分の分と立て替えに分けて記録してください。'
-                  : '出どころか行き先に支出・収入ノードを選ぶと指定できます(資産・負債どうしの取引はもともと収支に入りません)。'}</span>
-              </span>
-            </span>
-          </label>
+          <div>${toggleChip('exclude-from-flow', '集計から除外', { on: excludeChecked, disabled: !hasFlowEndpoint })}</div>
 
-          <div style="display:flex;gap:8px;">
-            <button id="add-btn" class="btn-primary" style="flex:1;">${editingLineId ? '更新' : '登録'}</button>
-            <button id="cancel-edit-btn" type="button" class="btn" style="${editingLineId ? '' : 'display:none;'}">キャンセル</button>
-          </div>
+          ${editingLineId ? `
+            <div class="form-foot">
+              <button id="delete-line-btn" type="button" class="link-danger">この取引を削除</button>
+              <div style="display:flex;gap:8px;">
+                <button id="cancel-edit-btn" type="button" class="btn">キャンセル</button>
+                <button id="add-btn" class="btn-primary" style="width:auto;padding:12px 22px;">更新</button>
+              </div>
+            </div>
+          ` : '<button id="add-btn" class="btn-primary">登録</button>'}
           <p id="add-error" style="color:var(--negative);font-size:12px;margin:0;"></p>
         </div>
       </section>
 
       <section class="card">
-        <h2>今日の記録</h2>
-        <p style="margin:2px 0 8px;font-size:12px;color:var(--muted);">登録するとここに追加されます。</p>
+        <h2 style="margin-bottom:6px;">今日の記録</h2>
         <div id="today-tx">${todayRows}</div>
-        <p style="margin:12px 0 0;font-size:12px;color:var(--faint);line-height:1.7;">候補は出どころ・行き先それぞれの使用頻度から並びます。</p>
       </section>
     </div>
   `;
@@ -213,12 +204,25 @@ export function wireRecord() {
     });
   });
 
-  document.getElementById('cancel-edit-btn').addEventListener('click', () => {
-    editingLineId = null;
-    setSelectedToNode(null);
-    ui.recordSlot = 'to';
-    state.editLine = null;
-    ui.resetRecordForm = true;
+  wireToggleChip('exclude-from-flow');
+
+  document.getElementById('cancel-edit-btn')?.addEventListener('click', () => {
+    endEdit();
+    render();
+  });
+
+  document.getElementById('delete-line-btn')?.addEventListener('click', async () => {
+    const line = state.editLine;
+    const ok = await confirmDialog({ title: 'この取引を削除しますか', summaryHtml: lineSummary(line) });
+    if (!ok) return;
+    try {
+      await deleteLine(supabase, line.id);
+    } catch (error) {
+      document.getElementById('add-error').textContent = error.message;
+      return;
+    }
+    endEdit();
+    invalidateTxCache();
     render();
   });
 
@@ -240,8 +244,7 @@ export function wireRecord() {
     const amount = Number(document.getElementById('amount').value);
     const memo = document.getElementById('memo').value;
     const occurredOn = document.getElementById('occurred-on').value;
-    const excludeEl = document.getElementById('exclude-from-flow');
-    const excludeFromFlowTotals = !excludeEl.disabled && excludeEl.checked;
+    const excludeFromFlowTotals = isToggleChipOn('exclude-from-flow');
 
     try {
       if (editingLineId) {
@@ -255,14 +258,21 @@ export function wireRecord() {
       return;
     }
 
-    editingLineId = null;
     // ui.selectedFromNode intentionally survives - the next entry is very
     // often from the same source (DESIGN.md UX方針).
-    setSelectedToNode(null);
-    ui.recordSlot = 'to';
-    state.editLine = null;
-    ui.resetRecordForm = true;
+    endEdit();
     invalidateTxCache();
     render();
   });
+}
+
+// Back to a fresh 登録 form. renderRecordPage re-derives editingLineId from
+// state.editLine, so that (not just editingLineId) must go, or the form
+// stays in 更新 mode for a line that was just saved or deleted.
+function endEdit() {
+  editingLineId = null;
+  setSelectedToNode(null);
+  ui.recordSlot = 'to';
+  state.editLine = null;
+  ui.resetRecordForm = true;
 }

@@ -3,8 +3,10 @@ import { supabase } from '../lib/supabase.js';
 import { esc, yen } from '../lib/format.js';
 import { loadAllNodesWithPaths } from '../lib/nodes.js';
 import { state, render } from '../state.js';
-import { SPEND_PERIODS, periodRange } from '../components/periodSelector.js';
-import { isNodeHidden, maskNodeYen, nodeHideToggleButton } from '../components/maskToggle.js';
+import { periodRange } from '../components/periodSelector.js';
+import { periodSegment, wirePeriodSegment } from '../components/periodSegment.js';
+import { segmented, wireSegmented } from '../components/segmented.js';
+import { isNodeHidden, maskNodeYen, nodeHideToggleButton, displayEditButton } from '../components/maskToggle.js';
 
 const CHART_COLORS = ['#2f7fa8', '#a95742', '#6d7fa3', '#c9974a', '#4d8f8a', '#7d6fa3', '#3c5163', '#5f8f6e'];
 
@@ -47,16 +49,12 @@ function renderDonutChart(entries, total, size = 132) {
 // always matches v_net_worth; only the donut excludes non-positive entries
 // (a negative slice can't be drawn), keeping them in the legend instead.
 // No aggregation here - `amount` was summed from view rows by the caller.
-// `subtitle` states this section's display rule (period-scoped vs. current
-// balance) right under its heading - see DESIGN.md's 構成比解析 note on why
-// asset/liability totals don't move with the period selector.
-function compositionSection(title, entries, subtitle = '') {
+function compositionSection(title, entries) {
   const total = entries.reduce((sum, e) => sum + e.amount, 0);
   if (!entries.length) {
     return `
       <section class="card">
         <h2 style="margin-bottom:4px;">${title}</h2>
-        ${subtitle ? `<p class="card-note" style="margin-top:0;">${subtitle}</p>` : ''}
         <p style="font-size:13px;color:var(--faint);margin-top:8px;">記録がありません</p>
       </section>
     `;
@@ -88,10 +86,7 @@ function compositionSection(title, entries, subtitle = '') {
   return `
     <section class="card">
       <div class="card-head">
-        <div>
-          <h2 style="margin-bottom:4px;">${title}</h2>
-          ${subtitle ? `<p class="card-note" style="margin:0;">${subtitle}</p>` : ''}
-        </div>
+        <h2>${title}</h2>
         <span class="mono" style="font-size:20px;font-weight:700;">${totalLabel}</span>
       </div>
       <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:10px;">
@@ -110,15 +105,7 @@ export async function renderAnalysisPage() {
   const view = state.analysisView ?? 'flow';
   const nodes = await loadAllNodesWithPaths();
 
-  const viewToggle = `
-    <div class="view-toggle">
-      <button type="button" id="analysis-view-flow-btn" class="btn${view === 'flow' ? ' selected' : ''}">収支</button>
-      <button type="button" id="analysis-view-balance-btn" class="btn${view === 'balance' ? ' selected' : ''}">資産</button>
-    </div>
-  `;
-
   let controls = '';
-  let note = '';
   let sections = '';
 
   if (view === 'flow') {
@@ -140,15 +127,10 @@ export async function renderAnalysisPage() {
       .filter((e) => e.amount > 0)
       .sort((a, b) => b.amount - a.amount);
 
-    controls = `
-      <select id="analysis-period-select" style="width:auto;padding:5px 8px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
-        ${Object.entries(SPEND_PERIODS).map(([value, label]) => `<option value="${value}" ${period === value ? 'selected' : ''}>${label}</option>`).join('')}
-      </select>
-    `;
-    note = '対象はルート直下の支出・収入ノードのみ(子ノードの内訳は合算)。「収支の集計から除外」設定のノード(初期残高など)は含みません。';
+    controls = periodSegment('analysis-period', period);
     sections = `
-      ${compositionSection('支出構成比', spendEntries, `${SPEND_PERIODS[period]}の増減`)}
-      ${compositionSection('収入構成比', incomeEntries, `${SPEND_PERIODS[period]}の増減`)}
+      ${compositionSection('支出構成比', spendEntries)}
+      ${compositionSection('収入構成比', incomeEntries)}
     `;
   } else {
     const rootAssetNodes = nodes.filter((n) => n.node_type === 'asset' && !n.parent_id);
@@ -168,43 +150,37 @@ export async function renderAnalysisPage() {
       .map((n) => ({ node: n, amount: -(balanceByNodeId.get(n.id) ?? 0) }))
       .sort((a, b) => b.amount - a.amount);
 
-    note = '対象はルート直下の資産・負債ノードのみ(子ノードの内訳は合算)。常に現在の残高を表示します。';
     sections = `
-      ${compositionSection('純資産構成比（資産）', assetEntries, '現在の残高')}
-      ${liabilityEntries.length ? compositionSection('純資産構成比（負債）', liabilityEntries, '現在の残高') : ''}
+      ${compositionSection('純資産構成比（資産）', assetEntries)}
+      ${liabilityEntries.length ? compositionSection('純資産構成比（負債）', liabilityEntries) : ''}
     `;
   }
 
   return `
     <button type="button" class="back-link" data-go-back>← 戻る</button>
-    <div style="display:flex;justify-content:center;margin-bottom:12px;">
-      ${viewToggle}
-    </div>
-    <div class="card-head">
-      <h1>構成比</h1>
-      ${controls}
-    </div>
-    <p style="margin:6px 0 0;font-size:11.5px;color:var(--faint);line-height:1.7;">
-      ${note}
-      円グラフにカーソルを合わせると、そのノードの金額と割合を表示します。
-    </p>
-    <div class="grid-fit-320" style="margin-top:12px;">
-      ${sections}
+    <div class="stack" style="gap:14px;">
+      <div class="page-head">
+        <h1>構成比</h1>
+        <div class="page-actions">${displayEditButton()}</div>
+      </div>
+      <div class="toolbar">
+        ${segmented('analysis-view', [['flow', '収支'], ['balance', '資産']], view)}
+        <div class="toolbar-end">${controls}</div>
+      </div>
+      <div class="grid-fit-320">
+        ${sections}
+      </div>
     </div>
   `;
 }
 
 export function wireAnalysisPage() {
-  document.getElementById('analysis-view-flow-btn').addEventListener('click', () => {
-    state.analysisView = 'flow';
+  wireSegmented('analysis-view', (value) => {
+    state.analysisView = value;
     render();
   });
-  document.getElementById('analysis-view-balance-btn').addEventListener('click', () => {
-    state.analysisView = 'balance';
-    render();
-  });
-  document.getElementById('analysis-period-select')?.addEventListener('change', (e) => {
-    state.analysisPeriod = e.target.value;
+  wirePeriodSegment('analysis-period', (value) => {
+    state.analysisPeriod = value;
     render();
   });
 }
