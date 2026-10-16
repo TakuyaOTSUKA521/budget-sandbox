@@ -314,7 +314,6 @@ html.sheet-open, html.sheet-open body { overflow: hidden; }
 .bar-chart-svg .bc-zero { stroke: var(--divider); }
 .bar-chart-svg .bc-pos { fill: var(--accent); }
 .bar-chart-svg .bc-neg { fill: var(--negative); }
-.bar-chart-single .bar-chart-svg .bc-neg { fill: var(--accent); }
 .bar-chart-svg .bc-tick { font-size: 10.5px; fill: var(--faint); }
 
 .trend-bars { display: flex; align-items: flex-end; gap: 3px; height: 132px; margin-top: 16px; padding-top: 4px; border-bottom: 1px solid var(--divider); }

@@ -95,11 +95,10 @@ export function renderBarChartAxis(points, valueKey, hidden) {
     labels.push({ y: scale.zeroY, shift: zeroShift, text: '0' });
   }
 
-  // 累積 is the balance itself, so it's drawn in one color whatever the sign;
-  // only 1日あたり splits bars into 増加 (above zero) / 減少 (below).
-  const singleColor = valueKey === 'cumulative_balance';
+  // Bars below zero are drawn in the negative color in both modes: 減少 in
+  // 1日あたり, a negative balance in 累積.
   return `
-    <div class="bar-chart${singleColor ? ' bar-chart-single' : ''}">
+    <div class="bar-chart">
       <div class="y-axis-labels mono" style="height:${bottom + BAR_CHART_PAD_Y}px;">
         ${labels.map((l) => `<span style="top:${l.y}px;transform:translateY(${l.shift});">${l.text}</span>`).join('')}
       </div>

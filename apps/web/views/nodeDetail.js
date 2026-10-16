@@ -8,6 +8,9 @@ import { renderTxRow } from '../components/txRow.js';
 import { segmented, wireSegmented } from '../components/segmented.js';
 import { CHART_MODES, renderBarChartAxis, mountBarChart } from '../components/barChart.js';
 
+// 内訳は新しい順に先頭だけ見せ、残りは「すべて表示」で開く
+const DETAIL_LINES_LIMIT = 10;
+
 export async function renderDetailPage() {
   const nodeId = state.detailNodeId;
   const label = nodesById.get(nodeId)?.path ?? state.detailName ?? nodeId;
@@ -22,7 +25,12 @@ export async function renderDetailPage() {
   const latestBalance = cumulative.length ? cumulative[cumulative.length - 1].cumulative_balance : 0;
   const valueKey = pref.chartMode === 'cumulative' ? 'cumulative_balance' : 'daily_delta';
 
-  const detailRows = lines.map((l) => renderTxRow(l)).join('') || '<p style="font-size:13px;color:var(--faint);">記録がありません</p>';
+  const detailRows = lines.slice(0, DETAIL_LINES_LIMIT).map((l) => renderTxRow(l)).join('') || '<p style="font-size:13px;color:var(--faint);">記録がありません</p>';
+  const restCount = lines.length - DETAIL_LINES_LIMIT;
+  const restRows = restCount > 0 ? `
+    <div id="detail-lines-rest" hidden>${lines.slice(DETAIL_LINES_LIMIT).map((l) => renderTxRow(l)).join('')}</div>
+    <button type="button" id="detail-lines-more" class="btn" style="width:100%;margin-top:10px;">すべて表示(残り${restCount}件)</button>
+  ` : '';
 
   return `
     <div class="breadcrumb"><a href="#" data-nav="nodes">ノード一覧</a><span>/</span><span>${esc(label)}</span></div>
@@ -50,7 +58,7 @@ export async function renderDetailPage() {
 
       <section class="card">
         <h2 style="margin-bottom:6px;">内訳</h2>
-        <div id="detail-lines">${detailRows}</div>
+        <div id="detail-lines">${detailRows}${restRows}</div>
       </section>
     </div>
   `;
@@ -59,6 +67,11 @@ export async function renderDetailPage() {
 export function wireDetailPage() {
   const valueKey = pref.chartMode === 'cumulative' ? 'cumulative_balance' : 'daily_delta';
   mountBarChart(chartData, valueKey, isNodeHidden(state.detailNodeId));
+
+  document.getElementById('detail-lines-more')?.addEventListener('click', (e) => {
+    document.getElementById('detail-lines-rest').hidden = false;
+    e.currentTarget.remove();
+  });
 
   wireSegmented('chart-mode', (value) => {
     pref.chartMode = value;
