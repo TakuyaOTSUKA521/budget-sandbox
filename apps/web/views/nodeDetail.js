@@ -50,10 +50,12 @@ export async function renderDetailPage() {
         </div>
         <div style="font-size:11.5px;color:var(--faint);margin:12px 0 6px;">${chartTitle}</div>
         ${renderBarChartAxis(chartData, valueKey, isNodeHidden(nodeId))}
-        <div class="legend">
-          <span><span class="swatch" style="background:var(--accent);"></span>支出（プラス）</span>
-          <span><span class="swatch" style="background:var(--secondary);"></span>返金・収入</span>
-        </div>
+        ${pref.chartMode === 'daily' ? `
+          <div class="legend">
+            <span><span class="swatch" style="background:var(--accent);"></span>増加</span>
+            <span><span class="swatch" style="background:var(--negative);"></span>減少</span>
+          </div>
+        ` : ''}
       </section>
 
       <section class="card">

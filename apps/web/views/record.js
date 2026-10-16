@@ -127,7 +127,7 @@ export async function renderRecordPage() {
             <p style="margin:0;font-size:11px;color:var(--faint);line-height:1.6;">${isFromSlot ? 'すべてのノードから検索できます。選ぶと行き先の候補に切り替わります。' : 'すべてのノードから検索できます。'}</p>
           </div>
 
-          <div class="grid-fit" style="grid-template-columns:1fr 1fr;">
+          <div class="grid-fit" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr);">
             <label class="field">金額<input id="amount" type="number" placeholder="0" value="${esc(String(amountValue))}" style="font-size:18px;" class="mono"></label>
             <label class="field">日付<input id="occurred-on" type="date" value="${occurredOnValue}"></label>
           </div>

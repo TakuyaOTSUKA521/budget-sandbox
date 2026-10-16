@@ -359,6 +359,7 @@ export type Database = {
       v_node_suggestions: {
         Row: {
           node_id: string | null
+          recent_count: number | null
           usage_count: number | null
           user_id: string | null
         }

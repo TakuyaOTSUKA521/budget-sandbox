@@ -19,7 +19,22 @@ export async function renderDashboardPage() {
     listLines(supabase, { ascending: false, limit: 5 }, memoKey)
   ]);
 
-  const trendPoints = dailyNetWorth.slice(-30);
+  // 今日を終点にした30日分。取引のない日(と窓より前から続く分)は直前の値で埋める -
+  // 残高はその日も存在するため(ノード詳細の累積推移と同じ扱い)。v_net_worth_daily が
+  // 返した値を繰り返すだけで、ここでは合計しない。
+  const trendPoints = [];
+  let carried = 0;
+  let nextIdx = 0;
+  const todayDate = new Date();
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate() - i);
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    while (nextIdx < dailyNetWorth.length && dailyNetWorth[nextIdx].occurred_on <= iso) {
+      carried = Number(dailyNetWorth[nextIdx].net_worth);
+      nextIdx++;
+    }
+    trendPoints.push({ occurred_on: iso, net_worth: carried });
+  }
   const trendMin = Math.min(0, ...trendPoints.map((p) => Number(p.net_worth)));
   const trendMax = Math.max(1, ...trendPoints.map((p) => Number(p.net_worth)));
   const trendBars = trendPoints
@@ -55,7 +70,7 @@ export async function renderDashboardPage() {
     .join('') || '<p style="font-size:13px;color:var(--faint);">この期間の記録がありません</p>';
 
   const spendPeriodSelect = `
-    <select id="spend-period-select" style="width:auto;padding:5px 8px;font-size:11.5px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
+    <select id="spend-period-select" style="width:auto;padding:5px 8px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
       ${Object.entries(SPEND_PERIODS).map(([value, label]) => `<option value="${value}" ${spendPeriod === value ? 'selected' : ''}>${label}</option>`).join('')}
     </select>
   `;
@@ -95,10 +110,10 @@ export async function renderDashboardPage() {
         <section class="card">
           <div class="card-head">
             <h2>純資産の推移</h2>
-            <span style="font-size:11.5px;color:var(--faint);">直近 ${trendPoints.length} 日</span>
+            <span style="font-size:11.5px;color:var(--faint);">直近 30 日</span>
           </div>
-          <div class="trend-bars">${trendBars || ''}</div>
-          ${trendPoints.length ? `
+          <div class="trend-bars">${dailyNetWorth.length ? trendBars : ''}</div>
+          ${dailyNetWorth.length ? `
             <div class="trend-axis">
               <span>${trendPoints[0].occurred_on}</span>
               <span>${trendPoints[Math.floor(trendPoints.length / 2)].occurred_on}</span>

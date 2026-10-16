@@ -32,11 +32,11 @@ export function renderSettingsPage() {
         </div>
         <div class="row">
           <div><div>既定の出どころ</div><div style="font-size:11.5px;color:var(--faint);">記録画面の初期値(この端末のみ)</div></div>
-          <select id="default-from-select" style="width:auto;padding:5px 10px;font-size:12.5px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);"></select>
+          <select id="default-from-select" style="width:auto;padding:5px 10px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);"></select>
         </div>
         <div class="row">
           <div><div>グラフの既定表示</div><div style="font-size:11.5px;color:var(--faint);">ノード詳細(この端末のみ)</div></div>
-          <select id="default-chart-select" style="width:auto;padding:5px 10px;font-size:12.5px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
+          <select id="default-chart-select" style="width:auto;padding:5px 10px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
             <option value="cumulative" ${pref.chartMode === 'cumulative' ? 'selected' : ''}>累積推移</option>
             <option value="daily" ${pref.chartMode === 'daily' ? 'selected' : ''}>1日あたり推移</option>
           </select>

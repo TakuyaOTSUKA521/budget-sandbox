@@ -154,10 +154,14 @@ export async function searchNodes(supabase, query) {
     return nodes.map((n) => ({ ...n, path: pathByNodeId.get(n.id) ?? n.name }));
 }
 
-// Top-used leaf nodes over the last 30 days, for input suggestion buttons.
+// Most-used nodes for the input suggestion buttons: last-30-days count first,
+// then all-time count, so the top N stays filled even after a quiet month.
 export async function getNodeSuggestions(supabase, limit = 8) {
     const [{ data: suggestions, error: suggestionsError }, paths] = await Promise.all([
-        supabase.from('v_node_suggestions').select('*').limit(limit),
+        supabase.from('v_node_suggestions').select('*')
+            .order('recent_count', { ascending: false })
+            .order('usage_count', { ascending: false })
+            .limit(limit),
         getNodePaths(supabase)
     ]);
     if (suggestionsError) throw suggestionsError;

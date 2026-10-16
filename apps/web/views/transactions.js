@@ -129,7 +129,7 @@ export async function renderTxListPage() {
   const filtered = filterTxRows(cache.txListRows, search);
 
   const periodSelect = `
-    <select id="tx-period-select" style="width:auto;padding:5px 8px;font-size:11.5px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
+    <select id="tx-period-select" style="width:auto;padding:5px 8px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
       ${Object.entries(SPEND_PERIODS).map(([value, label]) => `<option value="${value}" ${period === value ? 'selected' : ''}>${label}</option>`).join('')}
     </select>
   `;
@@ -143,7 +143,7 @@ export async function renderTxListPage() {
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
           ${periodSelect}
-          <input id="tx-search" type="text" placeholder="メモ・ノードで検索" value="${esc(state.txSearch ?? '')}" style="padding:8px 11px;font-size:13px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);min-width:180px;">
+          <input id="tx-search" type="text" placeholder="メモ・ノードで検索" value="${esc(state.txSearch ?? '')}" style="padding:8px 11px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);min-width:180px;">
         </div>
       </div>
       <div class="legend" style="margin-top:8px;">

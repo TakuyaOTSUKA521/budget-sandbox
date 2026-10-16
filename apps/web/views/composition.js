@@ -141,7 +141,7 @@ export async function renderAnalysisPage() {
       .sort((a, b) => b.amount - a.amount);
 
     controls = `
-      <select id="analysis-period-select" style="width:auto;padding:5px 8px;font-size:11.5px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
+      <select id="analysis-period-select" style="width:auto;padding:5px 8px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
         ${Object.entries(SPEND_PERIODS).map(([value, label]) => `<option value="${value}" ${period === value ? 'selected' : ''}>${label}</option>`).join('')}
       </select>
     `;

@@ -172,7 +172,7 @@ export async function renderNodesPage() {
       <div style="display:flex;gap:8px;align-items:center;">
         <button type="button" id="toggle-archived-btn" class="btn">${showArchivedNodes ? 'アーカイブ済みを隠す' : 'アーカイブ済みを表示'}</button>
         ${viewToggle}
-        <select id="nodes-period-select" style="width:auto;padding:5px 8px;font-size:11.5px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
+        <select id="nodes-period-select" style="width:auto;padding:5px 8px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);">
           ${Object.entries(SPEND_PERIODS).map(([value, label]) => `<option value="${value}" ${period === value ? 'selected' : ''}>${label}</option>`).join('')}
         </select>
       </div>
